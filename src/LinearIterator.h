@@ -1,5 +1,8 @@
 #pragma once
 
+#include <iostream>
+#include <fstream>
+
 #include "DataCache.h"
 #include "Util.h"
 

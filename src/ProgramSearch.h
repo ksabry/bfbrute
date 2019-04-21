@@ -7,7 +7,7 @@
 #include "ModDivisionTable.h"
 
 #define THREAD_COUNT 8
-#define SIZE_START 27
+#define SIZE_START 20
 #define INITIAL_ZERO
 
 template<typename PIteratorT, typename CacheT>
@@ -227,19 +227,23 @@ private:
 			{
 				lock.lock();
 				this->count += countUpdate;
-				if (printProgress) std::cout 
-					<< std::right << std::setw(15) << this->count
-					<< " " << programSize 
-					<< " " << iterator.GetProgram() << "\r" << std::flush;
+				if (printProgress)
+				{
+					// std::ofstream file("progress.txt", std::ofstream::app);
+					// file 
+					// 	<< std::right << std::setw(15) << this->count
+					// 	<< " " << programSize 
+					// 	<< " " << iterator.GetProgram() << std::endl;
+					// file.close();
+					std::cout 
+						<< std::right << std::setw(15) << this->count
+						<< " " << programSize 
+						<< " " << iterator.GetProgram() << "\r" << std::flush;
+				}
 				threadBestStringScore = this->bestStringScore;
 				lock.unlock();
 			}
 			
-			if (strcmp(iterator.GetProgram(), "+[[>++++++>+<<]>++]") == 0)
-			{
-				volatile int x = 0;
-			}
-
 			if (!iterator.Execute(inputs[0], input_sizes[0]))
 				goto fail;
 
@@ -254,11 +258,22 @@ private:
 				iterator.StringDistanceOutput(outputs[0], output_sizes[0], postProgram);
 
 				programResult = std::string(iterator.GetProgram()) + std::string(postProgram);
+				
 				this->bestStringScore = stringDist + programSize;
+				// show all programs 80 characters or lower
+				if (this->bestStringScore < 80-13) {
+					this->bestStringScore = 80;
+				} 
 
-				std::cout
-					<< std::setw(3) << this->bestStringScore + output_sizes[0] 
+				std::cout 
+					<< std::setw(3) << stringDist + programSize + output_sizes[0] 
 					<< " " << programResult << std::endl;
+
+				std::ofstream file("output.txt", std::ofstream::app);
+				file
+					<< std::setw(3) << stringDist + programSize + output_sizes[0] 
+					<< " " << programResult << std::endl;
+				file.close();
 			}
 			threadBestStringScore = this->bestStringScore;
 			lock.unlock();

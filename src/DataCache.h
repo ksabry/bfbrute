@@ -47,7 +47,7 @@ public:
 		for (uint_fast32_t size = 2; size <= max_cache_size; size++)
 		{
 			CreateSize(size);
-			std::cout << "Created cache size " << size << "\r" << std::flush;
+			std::cout << "Created cache size " << size << " / " << max_cache_size << "\r" << std::flush;
 		}
 		std::cout << std::endl;
 	}

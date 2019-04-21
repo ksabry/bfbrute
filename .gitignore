@@ -331,3 +331,7 @@ ASALocalRun/
 bin/**
 obj/**
 .dep/**
+
+output.txt
+
+.vscode

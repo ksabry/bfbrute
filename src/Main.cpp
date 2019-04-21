@@ -61,7 +61,7 @@ void testSearch()
 		LLRR_ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
 		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>> 
 	search(inputs, outputs);
-	
+
 	//search.printProgress = false;
 	//std::string result = search.Find();
 	//std::cout << result << " " << result.size() << std::endl;
@@ -101,10 +101,10 @@ int main()
 	// 	bool result = iter.Execute("", 0);
 	// }
 
-	double first = static_cast<double>(clock()) / CLOCKS_PER_SEC;
+	// double first = static_cast<double>(clock()) / CLOCKS_PER_SEC;
 	testSearch();
-	double second = static_cast<double>(clock()) / CLOCKS_PER_SEC;
-	std::cout << "Completed in " << second - first << " seconds";
+	// double second = static_cast<double>(clock()) / CLOCKS_PER_SEC;
+	// std::cout << "Completed in " << second - first << " seconds";
 
 	std::cin.ignore();
 	return 0;

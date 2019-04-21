@@ -41,8 +41,9 @@ public:
 	}
 
 private:
-	uint_fast32_t threadDelta;
 	uint_fast32_t programSize;
+	uint_fast32_t threadOffset;
+	uint_fast32_t threadDelta;
 
 	LinearIterator<cache_data_size, cache_size, max_program_size> iterators[4];
 	int_fast32_t iteratorIdx;
@@ -53,11 +54,12 @@ public:
 	void Start(uint_fast32_t programSize, uint_fast32_t threadOffset, uint_fast32_t threadDelta)
 	{
 		this->programSize = programSize;
+		this->threadOffset = threadOffset;
 		this->threadDelta = threadDelta;
 
-		memset(iteratorSizes, 0, 4 * sizeof(int_fast32_t));
 		remainingSize = programSize - 6;
 		iteratorSizes[0] = 1;
+		iteratorSizes[1] = 0;
 		iteratorSizes[2] = 1;
 		iteratorSizes[3] = remainingSize;
 
