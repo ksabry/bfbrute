@@ -3,11 +3,12 @@
 #include <thread>
 #include <mutex>
 #include <assert.h>
+#include <chrono>
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-#define THREAD_COUNT 8
-#define SIZE_START 20
+#define THREAD_COUNT 16
+#define SIZE_START 24
 #define INITIAL_ZERO
 
 template<typename PIteratorT, typename CacheT>
@@ -40,7 +41,7 @@ public:
 		std::vector<uint_fast32_t> input_sizes, 
 		std::vector<const char*> outputs, 
 		std::vector<uint_fast32_t> output_sizes)
-		: inputs(inputs), input_sizes(input_sizes), outputs(outputs), output_sizes(output_sizes), count(0), programResult(""), printProgress(true)
+		: inputs(inputs), input_sizes(input_sizes), outputs(outputs), output_sizes(output_sizes), count(0), sizeCount(0), programResult(""), printProgress(true)
 	{
 		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
 		{
@@ -90,6 +91,8 @@ private:
 	bool foundProgramResult = false;
 
 	uint_fast32_t programSize;
+	uint_fast64_t programSizeCount;
+	std::chrono::time_point<std::chrono::system_clock> sizeStart;
 
 	std::vector<const char*> inputs;
 	std::vector<uint_fast32_t> input_sizes;
@@ -97,6 +100,7 @@ private:
 	std::vector<uint_fast32_t> output_sizes;
 
 	uint_fast64_t count;
+	uint_fast64_t sizeCount;
 	static std::mutex lock;
 
 public:
@@ -133,7 +137,7 @@ public:
 private:
 	void FindThread(uint_fast32_t threadIdx)
 	{
-		static const uint_fast32_t countUpdate = 1000000;
+		static const uint_fast32_t countUpdate = 10000000;
 
 		auto& iterator = iterators[threadIdx];
 		iterator.Start(programSize, threadIdx, THREAD_COUNT);
@@ -150,6 +154,7 @@ private:
 					break;
 				}
 				this->count += countUpdate;
+				this->sizeCount += countUpdate;
 				if (printProgress) std::cout << std::setw(10) << this->count << " " << iterator.GetProgram() << std::endl;
 				lock.unlock();
 			}
@@ -192,6 +197,13 @@ public:
 	void FindStringSize(uint_fast32_t programSize)
 	{
 		this->programSize = programSize;
+
+		std::cout << " Calculating program count for size " << programSize << "...\r" << std::flush;
+		programSizeCount = iterators[0].ProgramCount(programSize);
+		sizeCount = 0;
+
+		sizeStart = std::chrono::system_clock::now();
+
 		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
 		{
 			if (threads[i]) delete threads[i];
@@ -220,13 +232,12 @@ private:
 		while (iterator.Next())
 		{
 			uint_fast32_t stringDist;
-#ifdef INITIAL_ZERO
-			if (!iterator.StartsPlus()) goto fail;
-#endif
+
 			if (++threadCount % countUpdate == 0)
 			{
 				lock.lock();
 				this->count += countUpdate;
+				this->sizeCount += countUpdate;
 				if (printProgress)
 				{
 					// std::ofstream file("progress.txt", std::ofstream::app);
@@ -235,15 +246,33 @@ private:
 					// 	<< " " << programSize 
 					// 	<< " " << iterator.GetProgram() << std::endl;
 					// file.close();
+
+					double proportion = static_cast<double>(this->sizeCount) / static_cast<double>(programSizeCount);
+					auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - sizeStart).count();
+					uint_fast64_t remaining = static_cast<double>(elapsed) * (1-proportion) / proportion;
+
+					auto seconds = remaining % 60;
+					auto minutes = remaining / 60 % 60;
+					auto hours = remaining / 3600 % 24;
+					auto days = remaining / 86400;
+					
 					std::cout 
-						<< std::right << std::setw(15) << this->count
-						<< " " << programSize 
-						<< " " << iterator.GetProgram() << "\r" << std::flush;
+						<< std::right
+						<< " " << programSize
+						<< " " << std::setw(10) << std::setprecision(6) << std::fixed << proportion * 100 << "%"
+						<< " " << iterator.GetProgram()
+						<< " Estimated remaining " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
+						<< "\r" << std::flush;
 				}
 				threadBestStringScore = this->bestStringScore;
 				lock.unlock();
 			}
-			
+
+#ifdef INITIAL_ZERO
+			// if (!iterator.StartsPlus()) goto fail;
+			if (!iterator.StartsPlusOrMinus()) goto fail;
+			if (!iterator.IsFirstDataDeltaRight()) goto fail;
+#endif
 			if (!iterator.Execute(inputs[0], input_sizes[0]))
 				goto fail;
 
@@ -261,17 +290,17 @@ private:
 				
 				this->bestStringScore = stringDist + programSize;
 				// show all programs 80 characters or lower
-				if (this->bestStringScore < 80-13) {
-					this->bestStringScore = 80;
+				if (this->bestStringScore < 85-13) {
+					this->bestStringScore = 85-13;
 				} 
 
 				std::cout 
-					<< std::setw(3) << stringDist + programSize + output_sizes[0] 
+					<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize + output_sizes[0] 
 					<< " " << programResult << std::endl;
 
 				std::ofstream file("output.txt", std::ofstream::app);
 				file
-					<< std::setw(3) << stringDist + programSize + output_sizes[0] 
+					<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize + output_sizes[0] 
 					<< " " << programResult << std::endl;
 				file.close();
 			}

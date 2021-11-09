@@ -73,6 +73,25 @@ public:
 		return dataStack[0].idx == 0;
 	}
 
+	inline int_fast32_t DataDelta() const
+	{
+		return dataStack[0].idx;
+	}
+
+	uint_fast64_t SizeCount(uint_fast32_t programSize)
+	{
+		uint_fast32_t stackSize = programSize == 0 ? 1 : (programSize - 1) / cache_size + 1;
+		uint_fast32_t firstCacheSize = programSize == 0 ? 0 : (programSize - 1) % cache_size + 1;
+
+		uint_fast32_t cacheSizeCount = cache->SizeCount(cache_size);
+		uint_fast64_t result = cache->SizeCount(firstCacheSize);
+		for (uint_fast32_t i = 1; i < stackSize; i++)
+		{
+			result *= cacheSizeCount;
+		}
+		return result;
+	}
+
 private:
 	bool Inc()
 	{

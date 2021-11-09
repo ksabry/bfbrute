@@ -52,6 +52,11 @@ public:
 		std::cout << std::endl;
 	}
 
+	uint_fast64_t SizeCount(uint_fast32_t size)
+	{
+		return bordersBalanced[size + 1] - bordersBalanced[size] + bordersUnbalanced[size + 1] - bordersUnbalanced[size];
+	}
+
 private:
 	std::unordered_set<LookupData<data_size>> dataSet;
 	

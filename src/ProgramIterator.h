@@ -4,14 +4,14 @@
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-// #define SINGLE_BRACKET_HIERARCHY true
+#define SINGLE_BRACKET_HIERARCHY true
 //#define MAX_BRACKET_DEPTH 2
-#define MAX_JUMPS 5000
+#define MAX_JUMPS 10000
 #define SHORT_CIRCUIT_LINEAR_SINGULAR
 #define INITIAL_ZERO
 // #define SINGLE_ITER_COUNT 5
 #define NO_ENDING
-#define MAX_FIRST_SIZE 2
+#define MAX_FIRST_SIZE 1
 
 template<uint_fast32_t data_size, uint_fast32_t cache_data_size, uint_fast32_t cache_size, uint_fast32_t max_program_size = 32>
 class ProgramIterator
@@ -64,6 +64,34 @@ private:
 	int_fast32_t iteratorIdx;
 
 public:
+	uint_fast64_t ProgramCount(uint_fast32_t programSize)
+	{
+		uint_fast64_t result = 0;
+		
+		Start(programSize, 0, 1);
+		while (true)
+		{
+			uint_fast64_t iteratorsResult = 1;	
+			for (uint_fast32_t i = 0; i < iteratorCount; i++)
+			{
+				iteratorsResult *= iterators[0].SizeCount(iteratorSizes[i]);
+			}
+			result += iteratorsResult;
+
+			while (!NextBrackets())
+			{
+				if (!NextValidIteratorSizes(threadDelta))
+				{
+					goto finish;
+				}
+				bracketIdx = 1;
+				leftBracketStack[1] = 0;
+			}
+		}
+	finish:;
+		return result;
+	}
+
 	void Start(uint_fast32_t programSize, uint_fast32_t threadOffset, uint_fast32_t threadDelta)
 	{
 		this->programSize = programSize;
@@ -440,14 +468,15 @@ public:
 				for (uint_fast32_t i = 0; i < curIdx - bestIdx; i++) *(output++) = '<';
 			}
 			char diff = c - data[bestIdx];
-			if (c > 0)
+			if (diff > 0)
 			{
-				for (uint_fast32_t i = 0; i < c; i++) *(output++) = '+';
+				for (uint_fast32_t i = 0; i < diff; i++) *(output++) = '+';
 			}
 			else
 			{
-				for (uint_fast32_t i = 0; i < -c; i++) *(output++) = '-';
+				for (uint_fast32_t i = 0; i < -diff; i++) *(output++) = '-';
 			}
+			*(output++) = '.';
 
 			score += bestCharScore;
 			data[bestIdx] = c;
@@ -476,9 +505,31 @@ public:
 		return currentProgram;
 	}
 
-	inline bool StartsPlus()
+	inline bool StartsPlus() const
 	{
 		return static_cast<int8_t>(iterators[0].Data().data[cache_data_size / 2]) > 0;
+	}
+
+	inline bool StartsPlusOrMinus()
+	{
+		return iterators[0].Data().data[cache_data_size / 2] != 0;
+	}
+
+	inline bool IsFirstDataDeltaRight() const
+	{
+		for	(uint32_t i = 0; i < iteratorCount; i++)
+		{
+			int_fast32_t dataDelta = iterators[i].DataDelta();
+			if (dataDelta > 0)
+			{
+				return true;
+			}
+			else if (dataDelta < 0)
+			{
+				return false;
+			}
+		}
+		return false;
 	}
 
 	char FirstChar()

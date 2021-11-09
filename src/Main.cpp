@@ -42,11 +42,12 @@
 // 	}
 // }
 
-#include "LLRR_ProgramIterator.h"
+#include "ProgramIterator.h"
+// #include "LLRR_ProgramIterator.h"
 
 void testSearch()
 {
-	constexpr uint_fast32_t DATA_SIZE = 150;
+	constexpr uint_fast32_t DATA_SIZE = 400;
 	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
 	constexpr uint_fast32_t CACHE_SIZE = 16;
 	
@@ -58,7 +59,7 @@ void testSearch()
 	};
 
 	ProgramSearch<
-		LLRR_ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
+		ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
 		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>> 
 	search(inputs, outputs);
 
