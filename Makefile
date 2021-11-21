@@ -5,8 +5,9 @@ OBJ_DIR := ./obj
 OUT_DIR := ./bin
 DEP_DIR := ./.dep
 OUT_NAME := bfbrute
-#CXXFLAGS := -std=c++17 -g -O0
-CXXFLAGS := -std=c++17 -g -O2 -DNDEBUG
+# CXXFLAGS := -std=c++2a -g -O0
+CXXFLAGS := -std=c++2a -g -O2 -DNDEBUG
+# CXXFLAGS := -std=c++2a -O2 -DNDEBUG
 LDFLAGS := -pthread
 INC_DIRS := ./src
 LNK_DIRS := 

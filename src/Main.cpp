@@ -1,5 +1,5 @@
 // #include "ProgramIterator.h"
-#include "ProgramSearch.h"
+// #include "ProgramSearch.h"
 
 // void testIter()
 // {
@@ -42,34 +42,82 @@
 // 	}
 // }
 
-#include "ProgramIterator.h"
-// #include "LLRR_ProgramIterator.h"
+// #include "ProgramIterator.h"
+// // #include "LLRR_ProgramIterator.h"
+// #include "ProgramSearch.h"
 
-void testSearch()
+// void search()
+// {
+// 	constexpr uint_fast32_t DATA_SIZE = 400;
+// 	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
+// 	constexpr uint_fast32_t CACHE_SIZE = 12;
+	
+// 	std::vector<const char*> inputs = {
+// 		""
+// 	};
+// 	std::vector<const char*> outputs = {
+// 		"("
+// 	};
+
+// 	ProgramSearch<
+// 		ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
+// 		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>> 
+// 	search(inputs, outputs);
+
+// 	//search.printProgress = false;
+// 	//std::string result = search.Find();
+// 	//std::cout << result << " " << result.size() << std::endl;
+// 	search.Find();
+// }
+
+#include "OutputProgramIterator.h"
+#include "OutputProgramSearch.h"
+
+void search()
 {
 	constexpr uint_fast32_t DATA_SIZE = 400;
 	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
-	constexpr uint_fast32_t CACHE_SIZE = 16;
+	constexpr uint_fast32_t CACHE_SIZE = 12;
 	
+	// backwards
+	// std::vector<const char*> inputs = {
+	// 	"\0000", "\0001", "\0002", "\0008", "\0009", "\00001", "\00011"
+	// };
+	// std::vector<uint_fast32_t> input_sizes = {
+	// 	2,       2,       2,       2,       2,       3,        3
+	// };
+	// std::vector<const char*> outputs = {
+	// 	"1", "2", "3", "9", "10", "11", "12"
+	// };
+
+	// std::vector<const char*> inputs = {
+	// 	"9", "0", "1", "2", "3", "4", "5", "6", "7", "8"
+	// };
+	// std::vector<const char*> outputs = {
+	// 	"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
+	// };
+
 	std::vector<const char*> inputs = {
-		""
+		"",
 	};
 	std::vector<const char*> outputs = {
-		"Hello, World!"
+		"(",
 	};
 
-	ProgramSearch<
-		ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
-		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>> 
+	OutputProgramSearch<
+		OutputProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>,
+		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>>
 	search(inputs, outputs);
+
+	// investigate why -[>+<-----]>--. wasn't found
+	// +[[---->]<<-]
+	// -[>+<-----]>--
 
 	//search.printProgress = false;
 	//std::string result = search.Find();
 	//std::cout << result << " " << result.size() << std::endl;
-	search.FindString();
+	search.Find();
 }
-
-#include <ctime>
 
 int main()
 {
@@ -103,10 +151,122 @@ int main()
 	// }
 
 	// double first = static_cast<double>(clock()) / CLOCKS_PER_SEC;
-	testSearch();
+	
+	search();
+
 	// double second = static_cast<double>(clock()) / CLOCKS_PER_SEC;
 	// std::cout << "Completed in " << second - first << " seconds";
 
 	std::cin.ignore();
 	return 0;
 }
+
+// Single digit increment
+
+// base-2
+// 18 ,>++[->++[<]>-]>-.
+
+// base-3
+
+
+
+
+// Hello, World!
+
+// 72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33
+
+// H 
+// 15 ++[+[>]<-<++]>.
+// optimal
+
+// He
+// 21 -[-->+++[+>]<<<-]>.>.
+// likely optimal
+
+// 22 -[-->++[+>]<<+<-]>-.>.
+// 22 -[-->++[+>]<<+<-]>-.>.
+// 22 -[-->+++[+>]<<<-]+>.>.
+// 22 -[-->+++[+>]<<<-]->.>.
+// 22 -[-->+++[+>]<<<-]>.+>.
+// 22 -[-->+++[+>]<<<-]>.->.
+// 22 -[-->+++[+>]<<<-]>[.>]
+
+// 23 +[[--->]<<<-<--]>->.<-.
+// 23 -[[--->]<<<-<--]>->.<-.
+// 23 -[[+>]<<+++<----]>+.>+.
+// 23 +[[--->]<<<-<--]>-->.<.
+// 23 -[[--->]<<<-<--]>-->.<.
+// 23 +[[--->]<<<-<--]>>.<--.
+// 23 -[[--->]<<<-<--]>>.<--.
+// 23 -[++[>]<-<-<+++]>->+.<.
+// 23 -[++[>]<-<-<+++]>>+.<-.
+// 23 +[>+[++<]>+++>+]<-.>>-.
+// 23 -[-->+++[+>]<<<-]++>.>.
+// 23 -[-->+++[+>]<<<-]-->.>.
+// 23 -[-->++[+>]<<+<-]>-.+>.
+// 23 -[-->++[+>]<<+<-]>-.->.
+// 23 -[-->+[+>]<<++<-]>--.>.
+// 23 -[+<+>>+++[>]<-<<]>.>-.
+// 23 -[-->++[+>]<<+<-]+>-.>.
+// 23 -[-->++[+>]<<+<-]->-.>.
+// 23 -[-->+++[+>]<<<-]+>.+>.
+// 23 -[-->+++[+>]<<<-]+>.->.
+// 23 -[-->+++[+>]<<<-]->.+>.
+// 23 -[-->+++[+>]<<<-]->.->.
+// 23 +[+>+>->+[<]>+]<<<<.<+.
+// 23 -[+<+>>-->[->>]<<<]<.<.
+// 23 ++[[>->]<<---<<--]>>.>.
+// 23 -[-->+++[+>]<<<-]>.++>.
+// 23 -[-->+++[+>]<<<-]>.-->.
+// 23 -[->++>+>+[<]>-]>+.>>-.
+// 23 ++[>->+[+++<]>>]>.>---.
+// 23 --[>>----[<<]>>+>-]>.>.
+// 23 +[[++++>+[<]>+++]>-.>-]
+// 23 -[[+>]<<+++<----]>[+.>]
+// 23 +[>+[++<]>+++>+]<[-.>>]
+// 23 -[-->++[+>]<<+<-]>-[.>]
+// 23 -[-->+++[+>]<<<-]>[.+>]
+// 23 -[-->+++[+>]<<<-]>[.->]
+// 23 -[-->+++[+>]<<<-]+>[.>]
+// 23 -[-->+++[+>]<<<-]->[.>]
+// incomplete
+
+// Interesting 23
+// +[[--->]<<<-<--]>->.<-.
+// -[[+>]<<+++<----]>+.>+.
+// -[++[>]<-<-<+++]>->+.<.
+// +[>+[++<]>+++>+]<-.>>-.
+// -[-->+[+>]<<++<-]>--.>.
+// -[+<+>>+++[>]<-<<]>.>-.
+// +[+>+>->+[<]>+]<<<<.<+.
+// -[+<+>>-->[->>]<<<]<.<.
+// ++[[>->]<<---<<--]>>.>.
+// -[->++>+>+[<]>-]>+.>>-.
+// ++[>->+[+++<]>>]>.>---.
+// --[>>----[<<]>>+>-]>.>.
+// +[[++++>+[<]>+++]>-.>-]
+
+// Hel 
+// 27 +[++[<+<<+>>>>]<-<]<-<<[.>]
+// No solutions <= 21 (OPS w/ MAX_JUMPS 25000)
+// No solutions <= 22 (OPS w/ MAX_JUMPS 10000 MAX_FIRST_SIZE 2 MAXIMUM_OUTPUT_COUNT 5 NO_REPEATED_OUTPUT)
+
+// Hell
+// 29 +[[>]-<+<<[--<]>-]>.>>>>-.>..
+// 29 +[->[>]+<<+[--<]>]>-.>>>-.>..
+// 29 +[++[<+<<+>>>>]<-<]<<<.>.>-..
+// 29 +[++[<+<<+>>>>]<-<]<-<<[.>]<.
+// 29 +[----[->]<<<--<--]>.>--.>+..
+// 29 -[----[->]<<<--<--]>.>--.>+..
+// 29 -[-[>]>++>+[<]<+<-]>.>>>-.<..
+
+// Hello
+// 33 +[[>]-<+<<[--<]>-]>.>>>>-.>..+++.
+
+// -[>--[>]<<+]>.
+// +++++++..+++.
+// +[>+[+<]>]>.
+
+// 72, 101, 108, 108, 111, 44, 32, 87, 111, 114, 108, 100, 33
+// 72, 101, 108, 44, 32, 87
+// ^

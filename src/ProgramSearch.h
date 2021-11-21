@@ -7,9 +7,10 @@
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-#define THREAD_COUNT 16
-#define SIZE_START 24
+#define THREAD_COUNT 8
+#define SIZE_START 12
 #define INITIAL_ZERO
+#define SHOW_ALL_PROGRAMS_LENGTH 30-4
 
 template<typename PIteratorT, typename CacheT>
 class ProgramSearch
@@ -17,14 +18,16 @@ class ProgramSearch
 public:
 	ProgramSearch(
 		std::vector<const char*> inputs,
-		std::vector<const char*> outputs)
+		std::vector<const char*> outputs
+	)
 		: ProgramSearch(inputs, GetStringSizes(inputs), outputs, GetStringSizes(outputs))
 	{
 	}
 	ProgramSearch(
 		std::vector<const char*> inputs, 
 		std::vector<uint_fast32_t> input_sizes, 
-		std::vector<const char*> outputs)
+		std::vector<const char*> outputs
+	)
 		: ProgramSearch(inputs, input_sizes, outputs, GetStringSizes(outputs))
 	{
 	}
@@ -137,7 +140,7 @@ public:
 private:
 	void FindThread(uint_fast32_t threadIdx)
 	{
-		static const uint_fast32_t countUpdate = 10000000;
+		static const uint_fast32_t countUpdate = 1000000;
 
 		auto& iterator = iterators[threadIdx];
 		iterator.Start(programSize, threadIdx, THREAD_COUNT);
@@ -200,8 +203,9 @@ public:
 
 		std::cout << " Calculating program count for size " << programSize << "...\r" << std::flush;
 		programSizeCount = iterators[0].ProgramCount(programSize);
-		sizeCount = 0;
+		std::cout << std::endl << " Completed program count calculation for size " << programSize << std::endl;
 
+		sizeCount = 0;
 		sizeStart = std::chrono::system_clock::now();
 
 		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
@@ -289,10 +293,12 @@ private:
 				programResult = std::string(iterator.GetProgram()) + std::string(postProgram);
 				
 				this->bestStringScore = stringDist + programSize;
-				// show all programs 80 characters or lower
-				if (this->bestStringScore < 85-13) {
-					this->bestStringScore = 85-13;
-				} 
+
+#ifdef SHOW_ALL_PROGRAMS_LENGTH
+				if (this->bestStringScore < SHOW_ALL_PROGRAMS_LENGTH) {
+					this->bestStringScore = SHOW_ALL_PROGRAMS_LENGTH;
+				}
+#endif
 
 				std::cout 
 					<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize + output_sizes[0] 

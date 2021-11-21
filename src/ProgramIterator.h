@@ -4,14 +4,14 @@
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-#define SINGLE_BRACKET_HIERARCHY true
+// #define SINGLE_BRACKET_HIERARCHY
 //#define MAX_BRACKET_DEPTH 2
-#define MAX_JUMPS 10000
+#define MAX_JUMPS 100000
 #define SHORT_CIRCUIT_LINEAR_SINGULAR
 #define INITIAL_ZERO
 // #define SINGLE_ITER_COUNT 5
 #define NO_ENDING
-#define MAX_FIRST_SIZE 1
+// #define MAX_FIRST_SIZE 4
 
 template<uint_fast32_t data_size, uint_fast32_t cache_data_size, uint_fast32_t cache_size, uint_fast32_t max_program_size = 32>
 class ProgramIterator
@@ -71,7 +71,7 @@ public:
 		Start(programSize, 0, 1);
 		while (true)
 		{
-			uint_fast64_t iteratorsResult = 1;	
+			uint_fast64_t iteratorsResult = 1;
 			for (uint_fast32_t i = 0; i < iteratorCount; i++)
 			{
 				iteratorsResult *= iterators[0].SizeCount(iteratorSizes[i]);
@@ -82,14 +82,11 @@ public:
 			{
 				if (!NextValidIteratorSizes(threadDelta))
 				{
-					goto finish;
+					return result;
 				}
-				bracketIdx = 1;
-				leftBracketStack[1] = 0;
+				bracketIdx = 0;
 			}
 		}
-	finish:;
-		return result;
 	}
 
 	void Start(uint_fast32_t programSize, uint_fast32_t threadOffset, uint_fast32_t threadDelta)
@@ -105,18 +102,16 @@ public:
 		bool found = NextValidIteratorSizes(threadOffset);
 		assert(found);
 
-		bracketIdx = 1;
-		brackets[0].bracket = Bracket::LEFT;
-		brackets[0].depth = 1;
-		leftBracketStack[1] = 0;
+		bracketIdx = 0;
+		brackets[0].bracket = Bracket::EMPTY;
+		brackets[0].depth = 0;
 		jumps[0].zero = jumps[0].nonzero = 1;
 		
 		while (!NextBrackets())
 		{
 			bool found = NextValidIteratorSizes(threadDelta);
 			assert(found);
-			bracketIdx = 1;
-			leftBracketStack[1] = 0;
+			bracketIdx = 0;
 		}
 
 		iteratorIdx = 0;
@@ -129,9 +124,11 @@ public:
 		{
 			while (!NextBrackets())
 			{
-				if (!NextValidIteratorSizes(threadDelta)) return false;
-				bracketIdx = 1;
-				leftBracketStack[1] = 0;
+				if (!NextValidIteratorSizes(threadDelta))
+				{
+					return false;
+				}
+				bracketIdx = 0;
 			}
 			iteratorIdx = 0;
 			iterators[0].Start(iteratorSizes[0]);
@@ -174,6 +171,11 @@ private:
 
 	bool NextIterators()
 	{
+		if (iteratorIdx == iteratorCount - 1 && !lastExecutionSuccessful)
+		{
+			iteratorIdx = lastExecutionMaxProgramIdx;
+		}
+
 		while (iteratorIdx >= 0)
 		{
 			assert(iteratorIdx < max_program_size);
@@ -191,32 +193,50 @@ private:
 		return false;
 	}
 
+
 	bool NextBrackets()
 	{
 		if (iteratorCount == 1) return false;
 
-		while (bracketIdx > 0)
+		while (bracketIdx >= 0)
 		{
-			assert(bracketIdx >= 1 && bracketIdx < max_program_size);
+			uint_fast32_t remainingBrackets = iteratorCount - bracketIdx - 1;
+			bool left_valid = bracketIdx == 0 ? true : remainingBrackets >= brackets[bracketIdx - 1].depth + 2;
+			bool right_valid = bracketIdx == 0 ? false : brackets[bracketIdx - 1].depth > 0;
+
+			// EMPTY -> LEFT -> RIGHT -> EMPTY
+			assert(bracketIdx >= 0 && bracketIdx < max_program_size);
 			if (brackets[bracketIdx].bracket == Bracket::EMPTY)
 			{
-				uint_fast32_t remainingBrackets = iteratorCount - bracketIdx - 1;
-				assert(remainingBrackets >= brackets[bracketIdx - 1].depth);
-				if (remainingBrackets == brackets[bracketIdx - 1].depth)
+				if (left_valid)
+				{
+					if (!SetBracketLeft()) continue;
+					bracketIdx++;
+				}
+				else if (right_valid)
 				{
 					if (!SetBracketRight()) continue;
-					if (bracketIdx == iteratorCount - 2) return true;
+					if (bracketIdx == iteratorCount - 2) goto success;
+					bracketIdx++;
 				}
 				else
 				{
-					if (!SetBracketLeft()) continue;
+					bracketIdx--;
 				}
-				bracketIdx++;
 			}
-			else if (brackets[bracketIdx].bracket == Bracket::LEFT && brackets[bracketIdx - 1].depth > 0)
+			else if (brackets[bracketIdx].bracket == Bracket::LEFT)
 			{
-				if (!SetBracketRight()) continue;
-				bracketIdx++;
+				if (right_valid)
+				{
+					if (!SetBracketRight()) continue;
+					if (bracketIdx == iteratorCount - 2) goto success;
+					bracketIdx++;
+				}
+				else
+				{
+					brackets[bracketIdx].bracket = Bracket::EMPTY;
+					bracketIdx--;
+				}
 			}
 			else
 			{
@@ -225,38 +245,56 @@ private:
 			}
 		}
 		return false;
+	
+	success:;
+
+		SetJumps();
+		return true;
 	}
 
 	inline bool SetBracketLeft()
 	{
 		assert(bracketIdx >= 0 && bracketIdx < max_program_size);
 		brackets[bracketIdx].bracket = Bracket::LEFT;
-		brackets[bracketIdx].depth = brackets[bracketIdx - 1].depth + 1;
-		assert(brackets[bracketIdx].depth >= 0 && brackets[bracketIdx].depth < max_program_size);
-		leftBracketStack[brackets[bracketIdx].depth] = bracketIdx;
+		brackets[bracketIdx].depth = bracketIdx == 0 ? 1 : brackets[bracketIdx - 1].depth + 1;
 
-		return (iteratorSizes[bracketIdx] > 0 || brackets[bracketIdx - 1].bracket == Bracket::LEFT)
+		return (
+			iteratorSizes[bracketIdx] > 0
+			|| (bracketIdx > 0 && brackets[bracketIdx - 1].bracket == Bracket::LEFT)
+		)
 #ifdef MAX_BRACKET_DEPTH
-			   && brackets[bracketIdx].depth <= MAX_BRACKET_DEPTH
+		&& brackets[bracketIdx].depth <= MAX_BRACKET_DEPTH
 #endif
 #ifdef SINGLE_BRACKET_HIERARCHY
-			   && brackets[bracketIdx - 1].depth > 0
+		&& (bracketIdx == 0 || brackets[bracketIdx - 1].depth > 0)
 #endif 
-			   ;
+		;
 	}
 
 	inline bool SetBracketRight()
 	{
-		assert(bracketIdx >= 0 && bracketIdx < max_program_size);
-		uint_fast32_t lbracket = leftBracketStack[brackets[bracketIdx - 1].depth];
-		assert(lbracket >= 0 && lbracket < max_program_size);
-		jumps[bracketIdx].zero = jumps[lbracket].zero = bracketIdx + 1;
-		jumps[bracketIdx].nonzero = jumps[lbracket].nonzero = lbracket + 1;
-
+		assert(bracketIdx > 0 && bracketIdx < max_program_size);
 		brackets[bracketIdx].bracket = Bracket::RIGHT;
 		brackets[bracketIdx].depth = brackets[bracketIdx - 1].depth - 1;
 
 		return iteratorSizes[bracketIdx] > 0;
+	}
+
+	void SetJumps()
+	{
+		for (uint_fast32_t i = 0; i < iteratorCount - 1; i++)
+		{
+			if (brackets[i].bracket == Bracket::LEFT)
+			{
+				leftBracketStack[brackets[i].depth] = i;
+			}
+			else
+			{
+				uint_fast32_t lbracket = leftBracketStack[brackets[i - 1].depth];
+				jumps[i].zero = jumps[lbracket].zero = i + 1;
+				jumps[i].nonzero = jumps[lbracket].nonzero = lbracket + 1;
+			}
+		}
 	}
 
 	bool NextIteratorSizes()
@@ -301,10 +339,16 @@ private:
 	
 	ModDivisionTable* divisionTable;
 
+	bool lastExecutionSuccessful;
+	uint_fast32_t lastExecutionMaxProgramIdx;
+
 public:
 	bool Execute(const char* initialData, const uint_fast32_t initialDataSize)
 	{
 		// TODO: short-circuit unbalanced linear loop if beyond bounds and ends on nonzero
+
+		lastExecutionSuccessful = false;
+		lastExecutionMaxProgramIdx = 0;
 
 		uint_fast32_t programIdx = 0;
 		dataIdx = data_size / 2 + cache_data_size;
@@ -353,10 +397,19 @@ public:
 			
 			ApplyData(iteratorData);
 		
-			dataIdx += iteratorData.idx;
-			if (programIdx == iteratorCount - 1) return true;
+			dataIdx = newDataIdx;
+			if (programIdx == iteratorCount - 1)
+			{
+				lastExecutionSuccessful = true;
+				return true;
+			}
+
 			// TODO: test zero, nonzero in array
 			programIdx = (data[dataIdx] == 0) ? jumps[programIdx].zero : jumps[programIdx].nonzero;
+			if (programIdx > lastExecutionMaxProgramIdx)
+			{
+				lastExecutionMaxProgramIdx = programIdx;
+			}
 		}
 		return false;
 	}
