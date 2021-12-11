@@ -7,10 +7,10 @@
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-#define THREAD_COUNT 8
-#define SIZE_START 12
+#define THREAD_COUNT 16
+#define SIZE_START 23
 #define INITIAL_ZERO
-#define SHOW_ALL_PROGRAMS_LENGTH 30-4
+#define SHOW_ALL_PROGRAMS_LENGTH 82
 
 template<typename PIteratorT, typename CacheT>
 class ProgramSearch
@@ -187,7 +187,6 @@ private:
 public:
 	void FindString()
 	{
-		bestStringScore = 10000000;
 		uint_fast32_t programSize = SIZE_START;
 		programResult = std::string();
 		while (true)
@@ -202,10 +201,9 @@ public:
 		this->programSize = programSize;
 
 		std::cout << " Calculating program count for size " << programSize << "...\r" << std::flush;
-		programSizeCount = iterators[0].ProgramCount(programSize);
+		programSizeCount = iterators[0].TotalCount(programSize);
 		std::cout << std::endl << " Completed program count calculation for size " << programSize << std::endl;
 
-		sizeCount = 0;
 		sizeStart = std::chrono::system_clock::now();
 
 		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
@@ -220,8 +218,6 @@ public:
 	}
 
 private:
-	uint_fast32_t bestStringScore;
-
 	void FindStringThread(uint_fast32_t threadIdx)
 	{
 		static const uint_fast32_t countUpdate = 1000000;
@@ -229,9 +225,6 @@ private:
 		auto& iterator = iterators[threadIdx];
 		iterator.Start(programSize, threadIdx, THREAD_COUNT);
 
-		lock.lock();
-		uint_fast32_t threadBestStringScore = this->bestStringScore;
-		lock.unlock();
 		uint_fast32_t threadCount = 0;
 		while (iterator.Next())
 		{
@@ -241,7 +234,13 @@ private:
 			{
 				lock.lock();
 				this->count += countUpdate;
-				this->sizeCount += countUpdate;
+
+				uint_fast64_t currentCount = 0;
+				for (int i = 0; i < THREAD_COUNT; i++)
+				{
+					currentCount += iterators[i].CurrentCount();
+				}
+
 				if (printProgress)
 				{
 					// std::ofstream file("progress.txt", std::ofstream::app);
@@ -251,7 +250,7 @@ private:
 					// 	<< " " << iterator.GetProgram() << std::endl;
 					// file.close();
 
-					double proportion = static_cast<double>(this->sizeCount) / static_cast<double>(programSizeCount);
+					double proportion = static_cast<double>(currentCount) / static_cast<double>(programSizeCount);
 					auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - sizeStart).count();
 					uint_fast64_t remaining = static_cast<double>(elapsed) * (1-proportion) / proportion;
 
@@ -268,52 +267,34 @@ private:
 						<< " Estimated remaining " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
 						<< "\r" << std::flush;
 				}
-				threadBestStringScore = this->bestStringScore;
 				lock.unlock();
 			}
 
-#ifdef INITIAL_ZERO
-			// if (!iterator.StartsPlus()) goto fail;
-			if (!iterator.StartsPlusOrMinus()) goto fail;
-			if (!iterator.IsFirstDataDeltaRight()) goto fail;
-#endif
 			if (!iterator.Execute(inputs[0], input_sizes[0]))
-				goto fail;
+				continue;
 
-			stringDist = iterator.StringDistance(outputs[0], output_sizes[0], threadBestStringScore - programSize);
-			if (stringDist + programSize > threadBestStringScore) goto fail;
+			stringDist = iterator.StringDistance(outputs[0], output_sizes[0], SHOW_ALL_PROGRAMS_LENGTH - programSize);
+			if (stringDist + programSize > SHOW_ALL_PROGRAMS_LENGTH)
+			{
+				continue;
+			}
 
 			lock.lock();
-			if (stringDist + programSize <= this->bestStringScore)
-			{
-				iterator.Execute(inputs[0], input_sizes[0]);
-				char postProgram[500];
-				iterator.StringDistanceOutput(outputs[0], output_sizes[0], postProgram);
 
-				programResult = std::string(iterator.GetProgram()) + std::string(postProgram);
-				
-				this->bestStringScore = stringDist + programSize;
+			std::string postProgram = iterator.StringDistanceOutput(outputs[0], output_sizes[0], SHOW_ALL_PROGRAMS_LENGTH - programSize);
+			programResult = std::string(iterator.GetProgram()) + postProgram;
+			
+			std::cout 
+				<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize
+				<< " " << programResult << std::endl;
 
-#ifdef SHOW_ALL_PROGRAMS_LENGTH
-				if (this->bestStringScore < SHOW_ALL_PROGRAMS_LENGTH) {
-					this->bestStringScore = SHOW_ALL_PROGRAMS_LENGTH;
-				}
-#endif
-
-				std::cout 
-					<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize + output_sizes[0] 
-					<< " " << programResult << std::endl;
-
-				std::ofstream file("output.txt", std::ofstream::app);
-				file
-					<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize + output_sizes[0] 
-					<< " " << programResult << std::endl;
-				file.close();
-			}
-			threadBestStringScore = this->bestStringScore;
+			std::ofstream file("output.txt", std::ofstream::app);
+			file
+				<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize
+				<< " " << programResult << std::endl;
+			file.close();
+			
 			lock.unlock();
-
-		fail:;
 		}
 	}
 };

@@ -1,17 +1,20 @@
 #pragma once
 
 #include <assert.h>
+#include <locale>
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-// #define SINGLE_BRACKET_HIERARCHY
+#define SINGLE_BRACKET_HIERARCHY
 //#define MAX_BRACKET_DEPTH 2
-#define MAX_JUMPS 100000
+#define MAX_JUMPS 20000
 #define SHORT_CIRCUIT_LINEAR_SINGULAR
 #define INITIAL_ZERO
+// #define INITIAL_DATA_SYMMETRIC
 // #define SINGLE_ITER_COUNT 5
 #define NO_ENDING
-// #define MAX_FIRST_SIZE 4
+#define MAX_FIRST_SIZE 1
+// #define CASE_INSENSITIVE
 
 template<uint_fast32_t data_size, uint_fast32_t cache_data_size, uint_fast32_t cache_size, uint_fast32_t max_program_size = 32>
 class ProgramIterator
@@ -44,6 +47,8 @@ private:
 	uint_fast32_t threadOffset, threadDelta;
 	uint_fast32_t programSize;
 
+	uint_fast64_t currentCount;
+
 	LinearIterator<cache_data_size, cache_size, max_program_size> iterators[max_program_size];
 	uint_fast32_t iteratorCount;
 	
@@ -63,8 +68,10 @@ private:
 	
 	int_fast32_t iteratorIdx;
 
+	int_fast32_t firstIteratorWithNonZeroDataDelta;
+
 public:
-	uint_fast64_t ProgramCount(uint_fast32_t programSize)
+	uint_fast64_t TotalCount(uint_fast32_t programSize)
 	{
 		uint_fast64_t result = 0;
 		
@@ -89,9 +96,15 @@ public:
 		}
 	}
 
+	inline uint_fast64_t CurrentCount()
+	{
+		return currentCount;
+	}
+
 	void Start(uint_fast32_t programSize, uint_fast32_t threadOffset, uint_fast32_t threadDelta)
 	{
 		this->programSize = programSize;
+		this->currentCount = 0;
 		this->threadOffset = threadOffset;
 		this->threadDelta = threadDelta;
 
@@ -99,6 +112,8 @@ public:
 
 		iteratorCount = 1;
 		iteratorSizes[0] = programSize;
+		firstIteratorWithNonZeroDataDelta = 0;
+		lastExecutionMaxProgramIdx = 0;
 		bool found = NextValidIteratorSizes(threadOffset);
 		assert(found);
 
@@ -122,6 +137,13 @@ public:
 	{
 		while (!NextIterators())
 		{
+			int_fast64_t iteratorsCount = 1;
+			for (uint_fast32_t i = 0; i < iteratorCount; i++)
+			{
+				iteratorsCount *= iterators[0].SizeCount(iteratorSizes[i]);
+			}
+			currentCount += iteratorsCount;
+
 			while (!NextBrackets())
 			{
 				if (!NextValidIteratorSizes(threadDelta))
@@ -132,6 +154,7 @@ public:
 			}
 			iteratorIdx = 0;
 			iterators[0].Start(iteratorSizes[0]);
+			lastExecutionMaxProgramIdx = iteratorCount - 1;
 		}
 		return true;
 	}
@@ -162,8 +185,10 @@ private:
 				remainingSize--;
 #endif
 				assert(iteratorCount - 2 >= 0 && iteratorCount - 2 < max_program_size);
+				// Set to -1 so that after the first call to NextIteratorSizes it will be 0
 				iteratorSizes[iteratorCount - 2] = -1;
 				remainingSize++;
+				firstIteratorWithNonZeroDataDelta = 0;
 			}
 		}
 		return true;
@@ -178,10 +203,12 @@ private:
 
 		while (iteratorIdx >= 0)
 		{
-			assert(iteratorIdx < max_program_size);
-			if (iterators[iteratorIdx].Next())
+			if (NextSingleIterator())
 			{
-				if (iteratorIdx == iteratorCount - 1) return true;
+				if (iteratorIdx == iteratorCount - 1)
+				{
+					return true;
+				}
 				iteratorIdx++;
 				iterators[iteratorIdx].Start(iteratorSizes[iteratorIdx]);
 			}
@@ -193,6 +220,55 @@ private:
 		return false;
 	}
 
+	bool NextSingleIterator()
+	{
+		while (iterators[iteratorIdx].Next())
+		{
+#if defined INITIAL_ZERO || defined INITIAL_DATA_SYMMETRIC
+			// Check that the first iterator has a right delta
+			if (iteratorIdx <= firstIteratorWithNonZeroDataDelta)
+			{
+				int_fast32_t dataDelta = iterators[iteratorIdx].DataDelta();
+				if (dataDelta < 0)
+				{
+					continue;
+				}
+				else if (dataDelta > 0)
+				{
+					firstIteratorWithNonZeroDataDelta = iteratorIdx;
+				}
+				else
+				{
+					firstIteratorWithNonZeroDataDelta = iteratorIdx + 1;
+				}
+			}
+#endif
+
+#ifdef INITIAL_ZERO
+			// Do not permit guaranteed 0 after initial iterator or meaningless movements at the beginning
+			auto& data = iterators[0].Data();
+			if (iteratorIdx == 0 && (data.data[data.idx + cache_data_size / 2] == 0 || data.data[cache_data_size / 2] == 0))
+			{
+				continue;
+			}
+#endif
+
+			// Do not permit [-] (since [+] is equivalent)
+			if (
+				iteratorSizes[iteratorIdx] == 1
+				&& iteratorIdx > 0
+				&& brackets[iteratorIdx - 1].bracket == Bracket::LEFT
+				&& brackets[iteratorIdx].bracket == Bracket::RIGHT
+				&& iterators[iteratorIdx].Data().data[cache_data_size / 2] == 255
+			)
+			{
+				continue;
+			}
+
+			return true;
+		}
+		return false;
+	}
 
 	bool NextBrackets()
 	{
@@ -361,6 +437,7 @@ public:
 		uint_fast32_t remainingJumps = MAX_JUMPS;
 		while (remainingJumps--)
 		{
+			assert(programIdx < iteratorCount);
 			auto iteratorData = iterators[programIdx].Data();
 			bool isLinear = jumps[programIdx].nonzero == programIdx;
 
@@ -376,7 +453,10 @@ public:
 			{
 				uint8_t centerCell = iteratorData.data[iteratorData.idx + cache_data_size / 2];
 				int cnt = divisionTable->Get(data[dataIdx], centerCell);
-				if (cnt == -1) return false;
+				if (cnt == -1)
+				{
+					return false;
+				}
 
 #ifdef SHORT_CIRCUIT_LINEAR_SINGULAR
 				auto programSize = iteratorSizes[programIdx];
@@ -393,7 +473,10 @@ public:
 			}
 
 			uint_fast32_t newDataIdx = dataIdx + iteratorData.idx;
-			if (newDataIdx < cache_data_size || newDataIdx >= data_size + cache_data_size) return false;
+			if (newDataIdx < cache_data_size || newDataIdx >= data_size + cache_data_size)
+			{
+				return false;
+			}
 			
 			ApplyData(iteratorData);
 		
@@ -466,78 +549,287 @@ private:
 	}
 
 public:
-	// NOTE: destructive
 	uint_fast32_t StringDistance(const char* target, uint_fast32_t targetSize, uint_fast32_t shortCircuit)
 	{
-		uint_fast32_t score = 0;
-		uint_fast32_t curIdx = dataIdx;
-		for (uint_fast32_t charIdx = 0; charIdx < targetSize; charIdx++)
-		{
-			char c = target[charIdx];
-			uint_fast32_t bestIdx;
-			uint_fast32_t bestCharScore = 1000000;
-			for (uint_fast32_t i = cache_data_size; i <= data_size + cache_data_size; i++)
-			{
-				uint_fast32_t charScore = abs(static_cast<int_fast32_t>(curIdx - i)) + abs(static_cast<int8_t>(c - data[i]));
-				if (charScore < bestCharScore)
-				{
-					bestCharScore = charScore;
-					bestIdx = i;
-				}
-			}
-			score += bestCharScore;
-			if (score > shortCircuit) return score;
-			data[bestIdx] = c;
-			curIdx = bestIdx;
-		}
-		return score;
+		uint8_t currentData[data_size];
+		memcpy(currentData, data + cache_data_size, data_size);
+		return StringDistanceRecursive(target, targetSize, shortCircuit, currentData, dataIdx - cache_data_size);
 	}
 
-	uint_fast32_t StringDistanceOutput(const char* target, uint_fast32_t targetSize, char* output)
+	uint_fast32_t StringDistanceRecursive(const char* target, uint_fast32_t targetSize, uint_fast32_t shortCircuit, uint8_t* currentData, uint_fast32_t currentDataIdx)
 	{
-		uint_fast32_t score = 0;
-		uint_fast32_t curIdx = dataIdx;
-		for (uint_fast32_t charIdx = 0; charIdx < targetSize; charIdx++)
+		if (targetSize == 0)
 		{
-			char c = target[charIdx];
-			uint_fast32_t bestIdx;
-			uint_fast32_t bestCharScore = 1000000;
-			for (uint_fast32_t i = cache_data_size; i <= data_size + cache_data_size; i++)
-			{
-				uint_fast32_t charScore = abs(static_cast<int_fast32_t>(curIdx - i)) + abs(static_cast<int8_t>(c - data[i]));
-				if (charScore < bestCharScore)
-				{
-					bestCharScore = charScore;
-					bestIdx = i;
-				}
-			}
-
-			if (bestIdx > curIdx)
-			{
-				for (uint_fast32_t i = 0; i < bestIdx - curIdx; i++) *(output++) = '>';
-			}
-			else
-			{
-				for (uint_fast32_t i = 0; i < curIdx - bestIdx; i++) *(output++) = '<';
-			}
-			char diff = c - data[bestIdx];
-			if (diff > 0)
-			{
-				for (uint_fast32_t i = 0; i < diff; i++) *(output++) = '+';
-			}
-			else
-			{
-				for (uint_fast32_t i = 0; i < -diff; i++) *(output++) = '-';
-			}
-			*(output++) = '.';
-
-			score += bestCharScore;
-			data[bestIdx] = c;
-			curIdx = bestIdx;
+			return 0;
 		}
 
-		*output = '\0';
-		return score;
+		uint_fast32_t bestScore = 100000;
+		char c = target[0];
+
+		// Compute best scores for reaching each specific data index
+		uint_fast32_t dataDeltaScores[data_size];
+		for (uint_fast32_t idx = 0; idx < data_size; idx++)
+		{
+			dataDeltaScores[idx] = abs(static_cast<int_fast32_t>(currentDataIdx - idx));
+		}
+		for (int_fast32_t startDelta = -8; startDelta <= 8; startDelta++)
+		{
+			int_fast32_t startIdx = static_cast<int_fast32_t>(currentDataIdx) + startDelta;
+			if (startIdx < 0 || startIdx >= data_size)
+			{
+				continue;
+			}
+			for (int_fast32_t innerDelta = -8; innerDelta <= 8; innerDelta++)
+			{
+				if (innerDelta == 0)
+				{
+					continue;
+				}
+				int_fast32_t innerIdx = startIdx;
+				while (currentData[innerIdx])
+				{
+					innerIdx += innerDelta;
+					if (innerIdx < 0 || innerIdx >= data_size)
+					{
+						goto loop_fail;
+					}
+				}
+				for (int_fast32_t endDelta = -8; endDelta <= 8; endDelta++)
+				{
+					int_fast32_t endIdx = innerIdx + endDelta;
+					if (endIdx < 0 || endIdx >= data_size)
+					{
+						continue;
+					}
+					uint_fast32_t dataDeltaScore = 2 + abs(startDelta) + abs(innerDelta) + abs(endDelta);
+					if (dataDeltaScore < dataDeltaScores[endIdx])
+					{
+						dataDeltaScores[endIdx] = dataDeltaScore;
+					}
+				}
+			loop_fail:;
+			}
+		}
+
+		// Search through reaching each specific data index and directly modifying the data to match the next character
+		for (uint_fast32_t newDataIdx = 0; newDataIdx < data_size; newDataIdx++)
+		{
+			uint_fast32_t charScore = 1 + dataDeltaScores[newDataIdx] + abs(static_cast<int8_t>(c - currentData[newDataIdx]));
+
+			if (charScore > shortCircuit)
+			{
+				continue;
+			}
+
+			char oldData = currentData[newDataIdx];
+			currentData[newDataIdx] = c;
+			uint_fast32_t restScore = StringDistanceRecursive(target + 1, targetSize - 1, shortCircuit - charScore, currentData, newDataIdx);
+			currentData[newDataIdx] = oldData;
+
+			if (charScore + restScore < bestScore)
+			{
+				bestScore = charScore + restScore;
+			}
+
+#ifdef CASE_INSENSITIVE
+			if ('a' <= c && c <= 'z')
+			{
+				char upperC = toupper(c);
+				uint_fast32_t upperCharScore = 1 + dataDeltaScores[newDataIdx] + abs(static_cast<int8_t>(upperC - currentData[newDataIdx]));
+
+				if (upperCharScore > shortCircuit)
+				{
+					continue;
+				}
+
+				char oldData = currentData[newDataIdx];
+				currentData[newDataIdx] = upperC;
+				uint_fast32_t restScore = StringDistanceRecursive(target + 1, targetSize - 1, shortCircuit - upperCharScore, currentData, newDataIdx);
+				currentData[newDataIdx] = oldData;
+
+				if (upperCharScore + restScore < bestScore)
+				{
+					bestScore = upperCharScore + restScore;
+				}
+			}
+#endif
+		}
+
+		// TODO: Search for any multi-output loops ><[><+-.><+-]
+		return bestScore;
+	}
+
+	std::string StringDistanceOutput(const char* target, uint_fast32_t targetSize, uint_fast32_t shortCircuit)
+	{
+		uint8_t currentData[data_size];
+		memcpy(currentData, data + cache_data_size, data_size);
+		return StringDistanceOutputRecursive(target, targetSize, shortCircuit, currentData, dataIdx - cache_data_size);
+	}
+
+	std::string StringDistanceOutputRecursive(const char* target, uint_fast32_t targetSize, uint_fast32_t shortCircuit, uint8_t* currentData, uint_fast32_t currentDataIdx)
+	{
+		if (targetSize == 0)
+		{
+			return std::string();
+		}
+
+		uint_fast32_t bestScore = 100000;
+		std::string bestProgram = std::string(shortCircuit + 1, ' ');
+		char c = target[0];
+
+		// Compute best scores for reaching each specific data index
+		uint_fast32_t dataDeltaScores[data_size];
+		std::string dataDeltaPrograms[data_size];
+
+		for (uint_fast32_t idx = 0; idx < data_size; idx++)
+		{
+			dataDeltaScores[idx] = abs(static_cast<int_fast32_t>(currentDataIdx - idx));
+			dataDeltaPrograms[idx] = "";
+			if (idx > currentDataIdx)
+			{
+				for (uint_fast32_t i = 0; i < idx - currentDataIdx; i++) dataDeltaPrograms[idx] += '>';
+			}
+			else
+			{
+				for (uint_fast32_t i = 0; i < currentDataIdx - idx; i++) dataDeltaPrograms[idx] += '<';
+			}
+		}
+		for (int_fast32_t startDelta = -8; startDelta <= 8; startDelta++)
+		{
+			int_fast32_t startIdx = static_cast<int_fast32_t>(currentDataIdx) + startDelta;
+			if (startIdx < 0 || startIdx >= data_size)
+			{
+				continue;
+			}
+			for (int_fast32_t innerDelta = -8; innerDelta <= 8; innerDelta++)
+			{
+				if (innerDelta == 0)
+				{
+					continue;
+				}
+				int_fast32_t innerIdx = startIdx;
+				while (currentData[innerIdx])
+				{
+					innerIdx += innerDelta;
+					if (innerIdx < 0 || innerIdx >= data_size)
+					{
+						goto loop_fail;
+					}
+				}
+				for (int_fast32_t endDelta = -8; endDelta <= 8; endDelta++)
+				{
+					int_fast32_t endIdx = innerIdx + endDelta;
+					if (endIdx < 0 || endIdx >= data_size)
+					{
+						continue;
+					}
+					uint_fast32_t dataDeltaScore = 2 + abs(startDelta) + abs(innerDelta) + abs(endDelta);
+					if (dataDeltaScore < dataDeltaScores[endIdx])
+					{
+						dataDeltaScores[endIdx] = dataDeltaScore;
+						dataDeltaPrograms[endIdx] = std::string();
+						if (startDelta > 0)
+						{
+							for (uint_fast32_t i = 0; i < startDelta; i++) dataDeltaPrograms[endIdx] += '>';
+						}
+						else
+						{
+							for (uint_fast32_t i = 0; i < -startDelta; i++) dataDeltaPrograms[endIdx] += '<';
+						}
+						dataDeltaPrograms[endIdx] += '[';
+						if (innerDelta > 0)
+						{
+							for (uint_fast32_t i = 0; i < innerDelta; i++) dataDeltaPrograms[endIdx] += '>';
+						}
+						else
+						{
+							for (uint_fast32_t i = 0; i < -innerDelta; i++) dataDeltaPrograms[endIdx] += '<';
+						}
+						dataDeltaPrograms[endIdx] += ']';
+						if (endDelta > 0)
+						{
+							for (uint_fast32_t i = 0; i < endDelta; i++) dataDeltaPrograms[endIdx] += '>';
+						}
+						else
+						{
+							for (uint_fast32_t i = 0; i < -endDelta; i++) dataDeltaPrograms[endIdx] += '<';
+						}
+					}
+				}
+			loop_fail:;
+			}
+		}
+
+		// Search through reaching each specific data index and directly modifying the data to match the next character
+		for (uint_fast32_t newDataIdx = 0; newDataIdx < data_size; newDataIdx++)
+		{
+			uint_fast32_t charScore = 1 + dataDeltaScores[newDataIdx] + abs(static_cast<int8_t>(c - currentData[newDataIdx]));
+			std::string charProgram = dataDeltaPrograms[newDataIdx];
+			int8_t diff = static_cast<int8_t>(c - currentData[newDataIdx]);
+			if (diff > 0)
+			{
+				for (uint_fast32_t i = 0; i < diff; i++) charProgram += '+';
+			}
+			else
+			{
+				for (uint_fast32_t i = 0; i < -diff; i++) charProgram += '-';
+			}
+			charProgram += '.';
+
+			if (charScore > shortCircuit)
+			{
+				continue;
+			}
+
+			char oldData = currentData[newDataIdx];
+			currentData[newDataIdx] = c;
+			std::string restProgram = StringDistanceOutputRecursive(target + 1, targetSize - 1, shortCircuit - charScore, currentData, newDataIdx);
+			uint_fast32_t restScore = restProgram.size();
+			currentData[newDataIdx] = oldData;
+
+			if (charScore + restScore < bestScore)
+			{
+				bestScore = charScore + restScore;
+				bestProgram = charProgram + restProgram;
+			}
+
+#ifdef CASE_INSENSITIVE
+			if ('a' <= c && c <= 'z')
+			{
+				char upperC = toupper(c);
+				uint_fast32_t upperCharScore = 1 + dataDeltaScores[newDataIdx] + abs(static_cast<int8_t>(upperC - currentData[newDataIdx]));
+				std::string upperCharProgram = dataDeltaPrograms[newDataIdx];
+				int8_t diff = static_cast<int8_t>(upperC - currentData[newDataIdx]);
+				if (diff > 0)
+				{
+					for (uint_fast32_t i = 0; i < diff; i++) upperCharProgram += '+';
+				}
+				else
+				{
+					for (uint_fast32_t i = 0; i < -diff; i++) upperCharProgram += '-';
+				}
+				upperCharProgram += '.';
+
+				if (upperCharScore > shortCircuit)
+				{
+					continue;
+				}
+
+				char oldData = currentData[newDataIdx];
+				currentData[newDataIdx] = upperC;
+				std::string restProgram = StringDistanceOutputRecursive(target + 1, targetSize - 1, shortCircuit - upperCharScore, currentData, newDataIdx);
+				uint_fast32_t restScore = restProgram.size();
+				currentData[newDataIdx] = oldData;
+
+				if (upperCharScore + restScore < bestScore)
+				{
+					bestScore = upperCharScore + restScore;
+					bestProgram = upperCharProgram + restProgram;
+				}
+			}
+#endif
+		}
+		return bestProgram;
 	}
 
 	char currentProgram[256];
@@ -556,33 +848,6 @@ public:
 		}
 		output[0] = '\0';
 		return currentProgram;
-	}
-
-	inline bool StartsPlus() const
-	{
-		return static_cast<int8_t>(iterators[0].Data().data[cache_data_size / 2]) > 0;
-	}
-
-	inline bool StartsPlusOrMinus()
-	{
-		return iterators[0].Data().data[cache_data_size / 2] != 0;
-	}
-
-	inline bool IsFirstDataDeltaRight() const
-	{
-		for	(uint32_t i = 0; i < iteratorCount; i++)
-		{
-			int_fast32_t dataDelta = iterators[i].DataDelta();
-			if (dataDelta > 0)
-			{
-				return true;
-			}
-			else if (dataDelta < 0)
-			{
-				return false;
-			}
-		}
-		return false;
 	}
 
 	char FirstChar()

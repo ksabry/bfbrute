@@ -42,9 +42,36 @@
 // 	}
 // }
 
-// #include "ProgramIterator.h"
-// // #include "LLRR_ProgramIterator.h"
-// #include "ProgramSearch.h"
+#include "ProgramIterator.h"
+// #include "LLRR_ProgramIterator.h"
+#include "ProgramSearch.h"
+
+void search()
+{
+	constexpr uint_fast32_t DATA_SIZE = 400;
+	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
+	constexpr uint_fast32_t CACHE_SIZE = 16;
+	
+	std::vector<const char*> inputs = {
+		""
+	};
+	std::vector<const char*> outputs = {
+		"Hello, World!"
+	};
+
+	ProgramSearch<
+		ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
+		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>> 
+	search(inputs, outputs);
+
+	//search.printProgress = false;
+	//std::string result = search.Find();
+	//std::cout << result << " " << result.size() << std::endl;
+	search.FindString();
+}
+
+// #include "OutputProgramIterator.h"
+// #include "OutputProgramSearch.h"
 
 // void search()
 // {
@@ -52,16 +79,23 @@
 // 	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
 // 	constexpr uint_fast32_t CACHE_SIZE = 12;
 	
+// 	// std::vector<const char*> inputs = {
+// 	// 	"A\n",
+// 	// };
+// 	// std::vector<const char*> outputs = {
+// 	// 	"AB\nBC\nCD\nDE\nEF\nFG\nGH\nHI\nIJ\nJK\nKL\nLM\nMN\nNO\nOP\nPQ\nQR\nRS\nST\nTU\nUV\nVW\nWX\nXY\nYZ\nZA",
+// 	// };
+
 // 	std::vector<const char*> inputs = {
-// 		""
+// 		"",
 // 	};
 // 	std::vector<const char*> outputs = {
-// 		"("
+// 		"A\n B\n  C\n   D\n    E\n     F",
 // 	};
 
-// 	ProgramSearch<
-// 		ProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>, 
-// 		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>> 
+// 	OutputProgramSearch<
+// 		OutputProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>,
+// 		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>>
 // 	search(inputs, outputs);
 
 // 	//search.printProgress = false;
@@ -70,54 +104,46 @@
 // 	search.Find();
 // }
 
-#include "OutputProgramIterator.h"
-#include "OutputProgramSearch.h"
+// #include "DataProgramIterator.h"
+// #include "DataProgramSearch.h"
 
-void search()
-{
-	constexpr uint_fast32_t DATA_SIZE = 400;
-	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
-	constexpr uint_fast32_t CACHE_SIZE = 12;
+// void search()
+// {
+// 	constexpr uint_fast32_t DATA_SIZE = 400;
+// 	constexpr uint_fast32_t CACHE_DATA_SIZE = 32;
+// 	constexpr uint_fast32_t CACHE_SIZE = 12;
+
+// 	// TODO: add constraint in DataProgramSearch to have the result data index be the same across inputs?
+
+// 	std::vector<const char*> inputs = {
+// 		""
+// 	};
+// 	std::vector<uint_fast32_t> input_sizes = {
+// 		0
+// 	};
+// 	std::vector<int_fast32_t> input_offsets = {
+// 		0
+// 	};
 	
-	// backwards
-	// std::vector<const char*> inputs = {
-	// 	"\0000", "\0001", "\0002", "\0008", "\0009", "\00001", "\00011"
-	// };
-	// std::vector<uint_fast32_t> input_sizes = {
-	// 	2,       2,       2,       2,       2,       3,        3
-	// };
-	// std::vector<const char*> outputs = {
-	// 	"1", "2", "3", "9", "10", "11", "12"
-	// };
+// 	std::vector<const char*> outputs = {
+// 		"\x0A\x14\x28"
+// 	};
+// 	std::vector<uint_fast32_t> output_sizes = {
+// 		3
+// 	};
+// 	std::vector<int_fast32_t> output_offsets = {
+// 		0
+// 	};
+// 	DataProgramSearch<
+// 		DataProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>,
+// 		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>>
+// 	search(inputs, input_sizes, input_offsets, outputs, output_sizes, output_offsets);
 
-	// std::vector<const char*> inputs = {
-	// 	"9", "0", "1", "2", "3", "4", "5", "6", "7", "8"
-	// };
-	// std::vector<const char*> outputs = {
-	// 	"0", "1", "2", "3", "4", "5", "6", "7", "8", "9"
-	// };
-
-	std::vector<const char*> inputs = {
-		"",
-	};
-	std::vector<const char*> outputs = {
-		"(",
-	};
-
-	OutputProgramSearch<
-		OutputProgramIterator<DATA_SIZE, CACHE_DATA_SIZE, CACHE_SIZE>,
-		DataCache<CACHE_DATA_SIZE, CACHE_SIZE>>
-	search(inputs, outputs);
-
-	// investigate why -[>+<-----]>--. wasn't found
-	// +[[---->]<<-]
-	// -[>+<-----]>--
-
-	//search.printProgress = false;
-	//std::string result = search.Find();
-	//std::cout << result << " " << result.size() << std::endl;
-	search.Find();
-}
+// 	//search.printProgress = false;
+// 	//std::string result = search.Find();
+// 	//std::cout << result << " " << result.size() << std::endl;
+// 	search.Find();
+// }
 
 int main()
 {
@@ -160,6 +186,10 @@ int main()
 	std::cin.ignore();
 	return 0;
 }
+
+
+// IDEAS
+// If iterators[1] is skipped in all executions omit further programs in the family?
 
 // Single digit increment
 

@@ -1,32 +1,26 @@
 #pragma once
 
 #include <assert.h>
-#include <locale>
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
 // #define SINGLE_BRACKET_HIERARCHY
-//#define MAX_BRACKET_DEPTH 2
+// #define MAX_BRACKET_DEPTH 2
 #define MAX_JUMPS 20000
 #define SHORT_CIRCUIT_LINEAR_SINGULAR
 #define INITIAL_ZERO
 // #define INITIAL_DATA_SYMMETRIC
-#define NO_TRAILING_LINEAR_PROGRAM
-#define AFTER_OUTPUT_IRRELEVANT
+// #define NO_TRAILING_LINEAR_PROGRAM
 // #define MAX_FIRST_SIZE 2
-#define MINIMUM_OUTPUT_COUNT 1
-// #define MAXIMUM_OUTPUT_COUNT 5
-// #define NO_REPEATED_OUTPUT
-// #define CASE_INSENSITIVE
 
 template<uint_fast32_t data_size, uint_fast32_t cache_data_size, uint_fast32_t cache_size, uint_fast32_t max_program_size = 32>
-class OutputProgramIterator
+class DataProgramIterator
 {
 public:
-	OutputProgramIterator()
+	DataProgramIterator()
 	{
 	}
-	~OutputProgramIterator()
+	~DataProgramIterator()
 	{
 	}
 
@@ -50,6 +44,7 @@ private:
 	uint_fast32_t threadOffset, threadDelta;
 	uint_fast32_t programSize;
 
+	uint_fast64_t currentBracketCount;
 	uint_fast64_t currentCount;
 
 	LinearIterator<cache_data_size, cache_size, max_program_size> iterators[max_program_size];
@@ -62,8 +57,7 @@ private:
 	{
 		EMPTY,
 		LEFT,
-		RIGHT,
-		OUTPUT
+		RIGHT
 	};
 	struct { Bracket bracket; uint_fast32_t depth; } brackets[max_program_size];
 	struct { uint_fast32_t zero; uint_fast32_t nonzero; } jumps[max_program_size];
@@ -75,6 +69,7 @@ private:
 	int_fast32_t firstIteratorWithNonZeroDataDelta;
 
 public:
+	// Estimate
 	uint_fast64_t TotalCount(uint_fast32_t programSize)
 	{
 		uint_fast64_t result = 0;
@@ -99,7 +94,6 @@ public:
 			}
 		}
 	}
-
 	inline uint_fast64_t CurrentCount()
 	{
 		return currentCount;
@@ -117,7 +111,6 @@ public:
 		iteratorCount = 1;
 		iteratorSizes[0] = programSize;
 		firstIteratorWithNonZeroDataDelta = 0;
-		lastExecutionMaxProgramIdx = 0;
 		bool found = NextValidIteratorSizes(threadOffset);
 		assert(found);
 
@@ -158,7 +151,6 @@ public:
 			}
 			iteratorIdx = 0;
 			iterators[0].Start(iteratorSizes[0]);
-			lastExecutionMaxProgramIdx = iteratorCount - 1;
 		}
 		return true;
 	}
@@ -170,7 +162,7 @@ private:
 		{
 			while (!NextIteratorSizes())
 			{
-				iteratorCount += 1;
+				iteratorCount += 2;
 
 				remainingSize = programSize - iteratorCount + 1;
 				if (remainingSize <= 0) return false;
@@ -203,6 +195,7 @@ private:
 
 		while (iteratorIdx >= 0)
 		{
+			assert(iteratorIdx < max_program_size);
 			if (NextSingleIterator())
 			{
 				if (iteratorIdx == iteratorCount - 1)
@@ -272,17 +265,18 @@ private:
 
 	bool NextBrackets()
 	{
-		if (iteratorCount == 1) return false;
+		if (iteratorCount == 1)
+		{
+			return false;
+		}
 
-	restart:;
 		while (bracketIdx >= 0)
 		{
 			uint_fast32_t remainingBrackets = iteratorCount - bracketIdx - 1;
 			bool left_valid = bracketIdx == 0 ? true : remainingBrackets >= brackets[bracketIdx - 1].depth + 2;
 			bool right_valid = bracketIdx == 0 ? false : brackets[bracketIdx - 1].depth > 0;
-			bool output_valid = bracketIdx == 0 ? true : remainingBrackets >= brackets[bracketIdx - 1].depth + 1;
 
-			// EMPTY -> LEFT -> RIGHT -> OUTPUT -> EMPTY
+			// EMPTY -> LEFT -> RIGHT -> EMPTY
 			assert(bracketIdx >= 0 && bracketIdx < max_program_size);
 			if (brackets[bracketIdx].bracket == Bracket::EMPTY)
 			{
@@ -297,12 +291,6 @@ private:
 					if (bracketIdx == iteratorCount - 2) goto success;
 					bracketIdx++;
 				}
-				else if (output_valid)
-				{
-					if (!SetBracketOutput()) continue;
-					if (bracketIdx == iteratorCount - 2) goto success;
-					bracketIdx++;
-				}
 				else
 				{
 					bracketIdx--;
@@ -313,26 +301,6 @@ private:
 				if (right_valid)
 				{
 					if (!SetBracketRight()) continue;
-					if (bracketIdx == iteratorCount - 2) goto success;
-					bracketIdx++;
-				}
-				else if (output_valid)
-				{
-					if (!SetBracketOutput()) continue;
-					if (bracketIdx == iteratorCount - 2) goto success;
-					bracketIdx++;
-				}
-				else
-				{
-					brackets[bracketIdx].bracket = Bracket::EMPTY;
-					bracketIdx--;
-				}
-			}
-			else if (brackets[bracketIdx].bracket == Bracket::RIGHT)
-			{
-				if (output_valid)
-				{
-					if (!SetBracketOutput()) continue;
 					if (bracketIdx == iteratorCount - 2) goto success;
 					bracketIdx++;
 				}
@@ -352,25 +320,6 @@ private:
 	
 	success:;
 
-#if defined MINIMUM_OUTPUT_COUNT || defined MAXIMUM_OUTPUT_COUNT
-		uint_fast32_t output_count = 0;
-		for (int_fast32_t i = 0; i < iteratorCount - 1; i++)
-		{
-			if (brackets[i].bracket == Bracket::OUTPUT)
-			{
-				output_count++;
-			}
-		}
-
-#if defined MINIMUM_OUTPUT_COUNT
-		if (output_count < MINIMUM_OUTPUT_COUNT) goto restart;
-#endif
-#if defined MAXIMUM_OUTPUT_COUNT
-		if (output_count > MAXIMUM_OUTPUT_COUNT) goto restart;
-#endif
-
-#endif
-
 		SetJumps();
 		return true;
 	}
@@ -385,7 +334,8 @@ private:
 		// disallow ][
 		return (
 			iteratorSizes[bracketIdx] > 0
-			|| (bracketIdx > 0 && brackets[bracketIdx - 1].bracket != Bracket::RIGHT)
+			|| bracketIdx == 0 // INITIAL_ZERO will stop this from happening if necessary in another location
+			|| brackets[bracketIdx - 1].bracket != Bracket::RIGHT
 		)
 #ifdef MAX_BRACKET_DEPTH
 		&& brackets[bracketIdx].depth <= MAX_BRACKET_DEPTH
@@ -403,28 +353,6 @@ private:
 
 		// disallow .] [] ]]
 		return iteratorSizes[bracketIdx] > 0;
-	}
-
-	inline bool SetBracketOutput()
-	{
-		brackets[bracketIdx].bracket = Bracket::OUTPUT;
-		brackets[bracketIdx].depth = bracketIdx == 0 ? 0 : brackets[bracketIdx - 1].depth;
-
-		// allow .. [.
-		// disallow ].
-		// if NO_REPEATED_OUTPUT disallow ..
-		return (
-			iteratorSizes[bracketIdx] > 0
-			||
-			(
-				bracketIdx > 0
-				&& brackets[bracketIdx - 1].bracket != Bracket::RIGHT
-#ifdef NO_REPEATED_OUTPUT
-				&& brackets[bracketIdx - 1].bracket != Bracket::OUTPUT
-#endif
-			)
-
-		);
 	}
 
 	void SetJumps()
@@ -446,6 +374,7 @@ private:
 				jumps[i].zero = jumps[i].nonzero = i + 1;
 			}
 		}
+		jumps[iteratorCount - 1].zero = jumps[iteratorCount - 1].nonzero = iteratorCount;
 	}
 
 	bool NextIteratorSizes()
@@ -494,7 +423,7 @@ private:
 	uint_fast32_t lastExecutionMaxProgramIdx;
 
 public:
-	bool Execute(const char* initialData, const uint_fast32_t initialDataSize, const char* targetOutput, const uint_fast32_t targetOutputSize, uint_fast32_t* targetOutputIdx)
+	bool Execute(const char* initialData, const uint_fast32_t initialDataSize, const int_fast32_t initialDataOffset)
 	{
 		// TODO: short-circuit unbalanced linear loop if beyond bounds and ends on nonzero
 
@@ -507,11 +436,17 @@ public:
 		//dataBoundHigh = dataIdx + 1;
 		
 		memset(data, 0, data_size + 2 * cache_data_size);
-		memcpy(data + dataIdx, initialData, initialDataSize);
+		memcpy(data + dataIdx + initialDataOffset, initialData, initialDataSize);
 
 		uint_fast32_t remainingJumps = MAX_JUMPS;
 		while (remainingJumps--)
 		{
+			if (programIdx >= iteratorCount)
+			{
+				lastExecutionSuccessful = true;
+				return true;
+			}
+
 			auto iteratorData = iterators[programIdx].Data();
 			// is of the form '[*]' where * is only <>+-
 			bool isLinear = jumps[programIdx].nonzero == programIdx;
@@ -549,36 +484,8 @@ public:
 			}
 			
 			ApplyData(iteratorData);
-		
 			dataIdx = newDataIdx;
-			if (programIdx == iteratorCount - 1)
-			{
-				lastExecutionSuccessful = true;
-				return true;
-			}
 
-			if (brackets[programIdx].bracket == Bracket::OUTPUT)
-			{
-				if (
-					*targetOutputIdx == targetOutputSize ||
-#ifdef CASE_INSENSITIVE
-					tolower(data[dataIdx]) != tolower(targetOutput[*targetOutputIdx])
-#else
-					data[dataIdx] != targetOutput[*targetOutputIdx]
-#endif
-				)
-				{
-					return false;
-				}
-				(*targetOutputIdx)++;
-#ifdef AFTER_OUTPUT_IRRELEVANT
-				if (*targetOutputIdx == targetOutputSize)
-				{
-					lastExecutionSuccessful = true;
-					return true;
-				}
-#endif
-			}
 			// TODO: test zero, nonzero in array
 			programIdx = (data[dataIdx] == 0) ? jumps[programIdx].zero : jumps[programIdx].nonzero;
 			if (programIdx > lastExecutionMaxProgramIdx)
@@ -600,20 +507,68 @@ public:
 		return dataIdx;
 	}
 
-	inline bool DataEqual(const uint8_t* otherData, uint_fast32_t count)
+	inline bool DataEqual(const uint8_t* otherData, uint_fast32_t count, int_fast32_t offset)
 	{
 		for (uint_fast32_t i = 0; i < count; i++)
 		{
-			if (data[i + dataIdx] != otherData[i]) return false;
+			if (data[i + dataIdx + offset] != otherData[i]) return false;
 		}
 		return true;
 	}
 
-	inline bool DataEqual(const char* otherData, uint_fast32_t count)
+	inline bool DataEqual(const char* otherData, uint_fast32_t count, int_fast32_t offset)
 	{
 		for (uint_fast32_t i = 0; i < count; i++)
 		{
-			if (data[i + dataIdx] != static_cast<uint8_t>(otherData[i])) return false;
+			if (data[i + dataIdx + offset] != static_cast<uint8_t>(otherData[i])) return false;
+		}
+		return true;
+	}
+
+	inline bool DataEqualZeroOrNonzero(const uint8_t* otherData, uint_fast32_t count, int_fast32_t offset)
+	{
+		for (uint_fast32_t i = 0; i < count; i++)
+		{
+			if ((data[i + dataIdx + offset] == 0) != (otherData[i] == 0))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	inline bool DataEqualZeroOrNonzero(const char* otherData, uint_fast32_t count, int_fast32_t offset)
+	{
+		for (uint_fast32_t i = 0; i < count; i++)
+		{
+			if ((data[i + dataIdx + offset] == 0) != (otherData[i] == 0))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	inline bool DataEqualMultiple(const uint8_t* otherData, uint_fast32_t count, int_fast32_t offset, uint8_t multiple)
+	{
+		for (uint_fast32_t i = 0; i < count; i++)
+		{
+			if (data[i + dataIdx + offset] != static_cast<uint8_t>(otherData[i] * multiple))
+			{
+				return false;
+			}
+		}
+		return true;
+	}
+
+	inline bool DataEqualMultiple(const char* otherData, uint_fast32_t count, int_fast32_t offset, uint8_t multiple)
+	{
+		for (uint_fast32_t i = 0; i < count; i++)
+		{
+			if (data[i + dataIdx + offset] != static_cast<uint8_t>(otherData[i] * multiple))
+			{
+				return false;
+			}
 		}
 		return true;
 	}
