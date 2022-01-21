@@ -92,6 +92,40 @@ public:
 		return result;
 	}
 
+	void Serialize(std::ostream& output)
+	{
+		output << stackSize << " " << firstCacheSize << " ";
+		for (uint_fast32_t i = 0; i < max_stack_size; i++)
+		{
+			output << indexStack[i] << " ";
+		}
+		for (uint_fast32_t i = 0; i < max_stack_size; i++)
+		{
+			output << balancedStack[i] << " ";
+		}
+		output << first;
+	}
+
+	bool Deserialize(std::istream& input)
+	{
+		input >> stackSize;
+		input >> firstCacheSize;
+		for (uint_fast32_t i = 0; i < max_stack_size; i++)
+		{
+			input >> indexStack[i];
+		}
+		for (uint_fast32_t i = 0; i < max_stack_size; i++)
+		{
+			input >> balancedStack[i];
+		}
+		input >> first;
+
+		// Restore dataStack
+		for (int i = stackSize - 1; i >= 0; i--) CalcData(i);
+
+		return true;
+	}
+
 private:
 	bool Inc()
 	{
@@ -178,19 +212,4 @@ public:
 			cache->programsBalanced[indexStack[0] * cache_size] :
 			cache->programsUnbalanced[indexStack[0] * cache_size];
 	}
-};
-
-template<uint_fast32_t data_size, uint_fast32_t cache_size, uint_fast32_t max_program_size>
-struct LinearIterator_RecoverData
-{
-	uint_fast32_t stackSize;
-	uint_fast32_t firstCacheSize;
-
-	static const uint_fast32_t max_stack_size = (max_program_size - 1) / cache_size + 1;
-
-	uint_fast32_t indexStack[max_stack_size];
-	bool balancedStack[max_stack_size];
-	AlignedData<data_size> dataStack[max_stack_size];
-
-	bool first;
 };

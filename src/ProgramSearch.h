@@ -1,4 +1,5 @@
 #pragma once
+
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -8,9 +9,8 @@
 #include "ModDivisionTable.h"
 
 #define THREAD_COUNT 16
-#define SIZE_START 23
-#define INITIAL_ZERO
-#define SHOW_ALL_PROGRAMS_LENGTH 82
+#define SIZE_START 27
+#define SHOW_ALL_PROGRAMS_LENGTH 85
 
 template<typename PIteratorT, typename CacheT>
 class ProgramSearch
@@ -24,25 +24,25 @@ public:
 	{
 	}
 	ProgramSearch(
-		std::vector<const char*> inputs, 
-		std::vector<uint_fast32_t> input_sizes, 
+		std::vector<const char*> inputs,
+		std::vector<uint_fast32_t> input_sizes,
 		std::vector<const char*> outputs
 	)
 		: ProgramSearch(inputs, input_sizes, outputs, GetStringSizes(outputs))
 	{
 	}
 	ProgramSearch(
-		std::vector<const char*> inputs, 
-		std::vector<const char*> outputs, 
+		std::vector<const char*> inputs,
+		std::vector<const char*> outputs,
 		std::vector<uint_fast32_t> output_sizes)
 		: ProgramSearch(inputs, GetStringSizes(inputs), outputs, output_sizes)
 	{
 	}
 
 	ProgramSearch(
-		std::vector<const char*> inputs, 
-		std::vector<uint_fast32_t> input_sizes, 
-		std::vector<const char*> outputs, 
+		std::vector<const char*> inputs,
+		std::vector<uint_fast32_t> input_sizes,
+		std::vector<const char*> outputs,
 		std::vector<uint_fast32_t> output_sizes)
 		: inputs(inputs), input_sizes(input_sizes), outputs(outputs), output_sizes(output_sizes), count(0), sizeCount(0), programResult(""), printProgress(true)
 	{
@@ -71,12 +71,12 @@ public:
 
 	void Setup()
 	{
+		programResult = std::string();
 		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
 		{
 			if (threads[i]) delete threads[i];
 			threads[i] = nullptr;
 
-			iterators[i] = PIteratorT();
 			iterators[i].SetCache(&cache);
 			iterators[i].SetDivisionTable(&divisionTable);
 		}
@@ -187,24 +187,48 @@ private:
 public:
 	void FindString()
 	{
-		uint_fast32_t programSize = SIZE_START;
-		programResult = std::string();
+		if (!LoadFindStringProgress())
+		{
+			programSize = SIZE_START;
+			SetupSize();
+		}
+		
+		FindStringSize();
+
 		while (true)
 		{
-			FindStringSize(programSize++);
-			Setup();
+			programSize++;
+			SetupSize();
+			FindStringSize();
 		}
 	}
 
-	void FindStringSize(uint_fast32_t programSize)
+	void CountSize()
 	{
-		this->programSize = programSize;
+		PIteratorT iterator;
+		iterator.SetCache(&cache);
+		iterator.SetDivisionTable(&divisionTable);
 
 		std::cout << " Calculating program count for size " << programSize << "...\r" << std::flush;
-		programSizeCount = iterators[0].TotalCount(programSize);
+		programSizeCount = iterator.TotalCount(programSize);
 		std::cout << std::endl << " Completed program count calculation for size " << programSize << std::endl;
+	}
+
+	void SetupSize()
+	{
+		std::cout << "Setting up size " << programSize << std::endl;
 
 		sizeStart = std::chrono::system_clock::now();
+		for (uint_fast32_t thread_idx = 0; thread_idx < THREAD_COUNT; thread_idx++)
+		{
+			auto& iterator = iterators[thread_idx];
+			iterator.Start(programSize, thread_idx, THREAD_COUNT);
+		}
+	}
+
+	void FindStringSize()
+	{
+		CountSize();
 
 		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
 		{
@@ -221,9 +245,9 @@ private:
 	void FindStringThread(uint_fast32_t threadIdx)
 	{
 		static const uint_fast32_t countUpdate = 1000000;
+		static const uint_fast32_t countSave = 1000000;
 
 		auto& iterator = iterators[threadIdx];
-		iterator.Start(programSize, threadIdx, THREAD_COUNT);
 
 		uint_fast32_t threadCount = 0;
 		while (iterator.Next())
@@ -238,7 +262,7 @@ private:
 				uint_fast64_t currentCount = 0;
 				for (int i = 0; i < THREAD_COUNT; i++)
 				{
-					currentCount += iterators[i].CurrentCount();
+					currentCount += iterators[i].currentCount;
 				}
 
 				if (printProgress)
@@ -270,8 +294,15 @@ private:
 				lock.unlock();
 			}
 
+			if (threadCount % countSave == 0)
+			{
+				SaveFindStringProgress();
+			}
+
 			if (!iterator.Execute(inputs[0], input_sizes[0]))
+			{
 				continue;
+			}
 
 			stringDist = iterator.StringDistance(outputs[0], output_sizes[0], SHOW_ALL_PROGRAMS_LENGTH - programSize);
 			if (stringDist + programSize > SHOW_ALL_PROGRAMS_LENGTH)
@@ -296,6 +327,160 @@ private:
 			
 			lock.unlock();
 		}
+	}
+
+	std::string StringToHex(const std::string& input)
+	{
+		static const char hex_digits[] = "0123456789ABCDEF";
+
+		std::string output;
+		output.reserve(input.length() * 2);
+		for (unsigned char c : input)
+		{
+			output.push_back(hex_digits[c >> 4]);
+			output.push_back(hex_digits[c & 15]);
+		}
+		return output;
+	}
+
+	std::string Filename()
+	{
+		std::string filename = "/home/ksabry/dev/bfbrute/progress/program_search";
+
+		for (std::string input : inputs)
+		{
+			filename += "_" + StringToHex(input);
+		}
+		filename += "_";
+		for (std::string output : outputs)
+		{
+			filename += "_" + StringToHex(output);
+		}
+
+		filename += "__" + std::to_string(THREAD_COUNT);
+		// SIZE_START is not necessary
+		filename += "_" + std::to_string(SHOW_ALL_PROGRAMS_LENGTH);
+		filename += "_" + std::to_string(MAX_JUMPS);
+
+#ifdef SINGLE_BRACKET_HIERARCHY
+		filename += "_T";
+#else
+		filename += "_F";
+#endif
+
+#ifdef SHORT_CIRCUIT_LINEAR_SINGULAR
+		filename += "_T";
+#else
+		filename += "_F";
+#endif
+
+#ifdef INITIAL_ZERO
+		filename += "_T";
+#else
+		filename += "_F";
+#endif
+
+#ifdef INITIAL_DATA_SYMMETRIC
+		filename += "_T";
+#else
+		filename += "_F";
+#endif
+
+#ifdef NO_ENDING
+		filename += "_T";
+#else
+		filename += "_F";
+#endif
+
+#ifdef CASE_INSENSITIVE
+		filename += "_T";
+#else
+		filename += "_F";
+#endif
+
+#ifdef MAX_BRACKET_DEPTH
+		filename += "_" + std::to_string(MAX_BRACKET_DEPTH);
+#else
+		filename += "_F";
+#endif
+
+#ifdef SINGLE_ITER_COUNT
+		filename += "_" + std::to_string(SINGLE_ITER_COUNT);
+#else
+		filename += "_F";
+#endif
+
+#ifdef MAX_FIRST_SIZE
+		filename += "_" + std::to_string(MAX_FIRST_SIZE);
+#else
+		filename += "_F";
+#endif
+
+		return filename;
+	}
+
+	bool LoadFindStringProgress()
+	{
+		std::cout << "Attempting to load progress file" << std::endl;
+
+		lock.lock();
+
+		std::string filename = Filename();
+		std::ifstream file(filename);
+
+		if (!file.good())
+		{
+			std::cout << "No progress file found; starting from size " << SIZE_START << std::endl;
+			file.close();
+			lock.unlock();
+			return false;
+		}
+
+		int64_t elapsed;
+
+		file >> programSize;
+		file >> elapsed;
+		sizeStart = std::chrono::system_clock::now() - std::chrono::seconds(elapsed);
+
+		std::cout << "Progress file found; resuming size " << programSize << " (0/" << THREAD_COUNT << " loaded)\r" << std::flush;
+
+		for (uint_fast32_t thread_idx = 0; thread_idx < THREAD_COUNT; thread_idx++)
+		{
+			if (!iterators[thread_idx].Deserialize(file))
+			{
+				std::cout << "Failed to load progress file; starting from size " << SIZE_START << std::endl;
+				file.close();
+				lock.unlock();
+				return false;
+			}
+			std::cout << "Progress file found; resuming size " << programSize << " (" << thread_idx + 1 << "/" << THREAD_COUNT << " loaded)\r" << std::flush;
+		}
+
+		std::cout << std::endl;
+		file.close();
+		lock.unlock();
+		return true;
+	}
+
+	void SaveFindStringProgress()
+	{
+		lock.lock();
+
+		std::string filename = Filename();
+		std::ofstream file(filename, std::ofstream::trunc);
+		
+		file << programSize << "\n";
+		int64_t elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - sizeStart).count();
+		file << elapsed << "\n\n";
+
+		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
+		{
+			iterators[i].Serialize(file);
+			file << "\n\n";
+		}
+		file.close();
+
+		lock.unlock();
 	}
 };
 

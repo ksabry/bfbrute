@@ -7,8 +7,13 @@
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
+#define SIZE_START 1
 #define THREAD_COUNT 16
-#define SIZE_START 23
+
+#define MULTIPLE_MAX_TOTAL_LENGTH 70
+#define MULTIPLE_MAX_SINGLE_LENGTH 10
+#define MULTIPLE_MAX_FIRST_LENGTH 30
+#define MULTIPLE_START_FIRST_LENGTH 15
 
 template<typename Clock, typename Duration>
 std::ostream &operator<<(std::ostream &stream,
@@ -28,7 +33,7 @@ std::ostream &operator<<(std::ostream &stream,
 #endif
 }
 
-template<typename PIteratorT, typename CacheT>
+template<typename PIteratorT, typename CacheT, typename RawSourceExecutorT>
 class OutputProgramSearch
 {
 public:
@@ -152,7 +157,6 @@ public:
 		}
 	}
 
-private:
 	void FindThread(uint_fast32_t threadIdx)
 	{
 		static const uint_fast32_t countUpdate = 1000000;
@@ -280,7 +284,318 @@ private:
 		fail:;
 		}
 	}
+
+	std::string findMultiplePrecedingProgram;
+	PIteratorT findMultipleIterators[THREAD_COUNT * 20];
+	uint_fast64_t findMultipleCounts[THREAD_COUNT];
+	uint_fast32_t findMultipleBestScore;
+
+	void FindMultipleFromInitialProgram(std::string initialProgram)
+	{
+		findMultipleCounts[0] = 0;
+		findMultipleBestScore = MULTIPLE_MAX_TOTAL_LENGTH + 1;
+		findMultiplePrecedingProgram = initialProgram;
+		RawSourceExecutorT executor(initialProgram);
+		if (!executor.Execute())
+		{
+			std::cout << "Initial program execution failed";
+			return;
+		}
+		FindMultipleRecursive(0, executor.GetData(), executor.GetDataIdx(), 0, initialProgram.length());
+	}
+
+	void FindMultipleFromInitialData(uint8_t* initial_data, uint_fast32_t initial_data_idx, uint_fast32_t initial_length)
+	{
+		findMultipleCounts[0] = 0;
+		findMultipleBestScore = MULTIPLE_MAX_TOTAL_LENGTH + 1;
+		FindMultipleRecursive(0, initial_data, initial_data_idx, 0, initial_length);
+	}
+
+	void FindMultipleRecursive(uint_fast32_t iterator_idx, uint8_t* data, uint_fast32_t data_idx, uint_fast32_t start_output_idx, uint_fast32_t current_length)
+	{
+		PIteratorT& iterator = findMultipleIterators[iterator_idx];
+		iterator.SetCache(&cache);
+		iterator.SetDivisionTable(&divisionTable);
+
+		uint_fast32_t limit = iterator_idx == 0 ? MULTIPLE_MAX_FIRST_LENGTH : MULTIPLE_MAX_SINGLE_LENGTH;
+
+		for (uint_fast32_t program_size = 1; program_size <= limit; program_size++)
+		{
+			uint_fast32_t next_length = current_length + program_size;
+			if (next_length >= findMultipleBestScore)
+			{
+				return;
+			}
+
+			iterator.Start(program_size, 0, 1);
+			while (iterator.Next())
+			{
+				if (++findMultipleCounts[0] % 10000000 == 0)
+				// if (++findMultipleCount % 1 == 0)
+				{
+					lock.lock();
+
+					std::string program = GetFindMultipleProgram(0, iterator_idx, true);
+
+					std::cout
+						<< std::right << std::setfill(' ')
+						<< std::setw(3) << findMultipleIterators[0].programSize << " "
+						<< std::setw(12) << findMultipleCounts[0] << " "
+						<< std::string(program) << "      "
+						<< '\r' << std::flush
+					;
+
+					// if (iterator_idx > 0)
+					// {
+					// 	std::cin.ignore();
+					// }
+
+					lock.unlock();
+				}
+
+				uint_fast32_t output_idx = start_output_idx;
+				if (!iterator.ExecuteRawData(data, data_idx, outputs[0], output_sizes[0], &output_idx))
+				{
+					continue;
+				}
+				// skip programs that produce no relevent output
+				if (output_idx == start_output_idx)
+				{
+					continue;
+				}
+
+				// std::string program = GetFindMultipleProgram(0, iterator_idx, true);
+				// std::cout
+				// 	<< std::endl
+				// 	<< std::string(program)
+				// 	<< std::endl
+				// ;
+				// std::cin.ignore();
+
+				if (output_idx >= output_sizes[0])
+				{
+					lock.lock();
+
+					std::string program = GetFindMultipleProgram(0, iterator_idx);
+					findMultipleBestScore = next_length;
+
+					std::cout
+						<< std::right << std::setw(3) << std::setfill(' ') << next_length
+						<< " " << std::string(program) << "      " << std::endl
+					;
+
+					std::ofstream file("output.txt", std::ofstream::app);
+					file
+						<< std::right << std::setw(3) << std::setfill(' ') << next_length
+						<< " " << std::string(program)
+						<< std::endl;
+					file.close();
+
+					// std::cin.ignore();
+					lock.unlock();
+				}
+
+				// Heuristic pruning
+
+				int_fast32_t remaining_output = output_sizes[0] - output_idx;
+				int_fast32_t remaining_length = findMultipleBestScore - next_length;
+
+				// std::cout << GetFindMultipleProgram(0, iterator_idx, true) << std::endl;
+				// std::cout << remaining_length << " " << remaining_output << " " << remaining_output * 3.5 << std::endl;
+				// std::cin.ignore();
+
+				// Potentially experiment with these values
+				// if (remaining_length < (remaining_output - 1) * 3.5) // For "Hello, World!"
+				// if (remaining_length < (remaining_output - 1) * 4)
+				// {
+				// 	continue;
+				// }
+
+				uint8_t* next_data = iterator.Data();
+				uint_fast32_t next_data_idx = iterator.DataIdx();
+				FindMultipleRecursive(iterator_idx + 1, next_data, next_data_idx, output_idx, next_length);
+			}
+		}
+	}
+
+	// Threaded
+
+	void FindMultipleFromInitialProgramThreaded(std::string initialProgram)
+	{
+		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
+		{
+			findMultipleCounts[i] = 0;
+		}
+		findMultipleBestScore = MULTIPLE_MAX_TOTAL_LENGTH + 1;
+		findMultiplePrecedingProgram = initialProgram;
+		RawSourceExecutorT executor(initialProgram);
+		if (!executor.Execute())
+		{
+			std::cout << "Initial program execution failed";
+			return;
+		}
+
+		// FindMultipleRecursiveThread(0, 0, executor.GetData(), executor.GetDataIdx(), 0, initialProgram.length());
+
+		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
+		{
+			if (threads[i]) delete threads[i];
+			threads[i] = new std::thread(&OutputProgramSearch::FindMultipleRecursiveThread, this, i, 0, executor.GetData(), executor.GetDataIdx(), 0, initialProgram.length());
+		}
+		for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
+		{
+			threads[i]->join();
+		}
+	}
+
+	void FindMultipleRecursiveThread(uint_fast32_t thread_idx, uint_fast32_t iterator_idx, uint8_t* data, uint_fast32_t data_idx, uint_fast32_t start_output_idx, uint_fast32_t current_length)
+	{
+		// lock.lock();
+		// std::cout << thread_idx << " " << iterator_idx << std::endl;
+		// lock.unlock();
+
+		PIteratorT& iterator = findMultipleIterators[20 * thread_idx + iterator_idx];
+		iterator.SetCache(&cache);
+		iterator.SetDivisionTable(&divisionTable);
+
+		uint_fast32_t start_program_size = iterator_idx == 0 ? MULTIPLE_START_FIRST_LENGTH : 1;
+		uint_fast32_t end_program_size = iterator_idx == 0 ? MULTIPLE_MAX_FIRST_LENGTH : MULTIPLE_MAX_SINGLE_LENGTH;
+
+		for (uint_fast32_t program_size = start_program_size; program_size <= end_program_size; program_size++)
+		{
+			uint_fast32_t next_length = current_length + program_size;
+			if (next_length >= findMultipleBestScore)
+			{
+				return;
+			}
+
+			if (iterator_idx == 0)
+			{
+				iterator.Start(program_size, thread_idx, THREAD_COUNT, true);
+			}
+			else
+			{
+				iterator.Start(program_size, 0, 1);
+			}
+
+			while (iterator.Next())
+			{
+				// std::cout << thread_idx << " " << iterator.GetProgram() << std::endl;
+				// std::cin.ignore();
+				
+				if (++findMultipleCounts[thread_idx] % 10000000 == 0)
+				{
+					lock.lock();
+
+					uint_fast64_t total_count = 0;
+					for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
+					{
+						total_count += findMultipleCounts[i];
+					}
+					
+					std::string program = GetFindMultipleProgram(thread_idx, iterator_idx, true);
+
+					std::cout
+						<< std::right << std::setfill(' ')
+						<< std::setw(3) << findMultipleIterators[20 * thread_idx].programSize << " "
+						<< std::left << std::setw(MULTIPLE_MAX_TOTAL_LENGTH + 15) << std::string(program) << " "
+						<< std::right << std::setw(12) << total_count << " "
+						// << std::setw(3) << thread_idx << " : "
+					;
+
+					// for (uint_fast32_t i = 0; i < THREAD_COUNT; i++)
+					// {
+					// 	std::cout <<
+					// 		i << "|" << findMultipleCounts[i] << " ";
+					// 	;
+					// }
+
+					std::cout
+						<< '\r' << std::flush
+					;
+
+					lock.unlock();
+				}
+
+				uint_fast32_t output_idx = start_output_idx;
+				if (!iterator.ExecuteRawData(data, data_idx, outputs[0], output_sizes[0], &output_idx))
+				{
+					continue;
+				}
+				// skip programs that produce no relevent output
+				if (output_idx == start_output_idx)
+				{
+					continue;
+				}
+
+				// std::string program = GetFindMultipleProgram(thread_idx, iterator_idx, true);
+				// std::cout
+				// 	<< std::endl
+				// 	<< std::string(program)
+				// 	<< std::endl
+				// ;
+				// std::cin.ignore();
+
+				if (output_idx >= output_sizes[0])
+				{
+					lock.lock();
+
+					std::string program = GetFindMultipleProgram(thread_idx, iterator_idx);
+					findMultipleBestScore = next_length;
+
+					std::cout
+						<< std::right << std::setw(3) << std::setfill(' ') << next_length
+						<< " " << std::string(program) << "      " << std::endl
+					;
+
+					std::ofstream file("output.txt", std::ofstream::app);
+					file
+						<< std::right << std::setw(3) << std::setfill(' ') << next_length
+						<< " " << std::string(program)
+						<< std::endl;
+					file.close();
+
+					// std::cin.ignore();
+					lock.unlock();
+				}
+
+				// Heuristic pruning
+
+				// int_fast32_t remaining_output = output_sizes[0] - output_idx;
+				// int_fast32_t remaining_length = findMultipleBestScore - next_length;
+
+				// std::cout << GetFindMultipleProgram(thread_idx, iterator_idx, true) << std::endl;
+				// std::cout << remaining_length << " " << remaining_output << " " << remaining_output * 3.5 << std::endl;
+				// std::cin.ignore();
+
+				// Potentially experiment with these values
+				// if (remaining_length < (remaining_output - 1) * 3.5) // For "Hello, World!"
+				// if (remaining_length < (remaining_output - 1) * 4)
+				// {
+				// 	continue;
+				// }
+
+				uint8_t* next_data = iterator.Data();
+				uint_fast32_t next_data_idx = iterator.DataIdx();
+				FindMultipleRecursiveThread(thread_idx, iterator_idx + 1, next_data, next_data_idx, output_idx, next_length);
+			}
+		}
+	}
+
+	std::string GetFindMultipleProgram(uint_fast32_t thread_idx, uint_fast32_t last_iterator_idx, bool separate = false)
+	{
+		std::string result = findMultiplePrecedingProgram;
+		for (uint_fast32_t iterator_idx = thread_idx * 20; iterator_idx <= thread_idx * 20 + last_iterator_idx; iterator_idx++)
+		{
+			if (separate)
+			{
+				result += "|";
+			}
+			result += std::string(findMultipleIterators[iterator_idx].GetProgram());
+		}
+		return result;
+	}
 };
 
-template<typename PIteratorT, typename CacheT>
-std::mutex OutputProgramSearch<PIteratorT, CacheT>::lock;
+template<typename PIteratorT, typename CacheT, typename RawSourceExecutorT>
+std::mutex OutputProgramSearch<PIteratorT, CacheT, RawSourceExecutorT>::lock;

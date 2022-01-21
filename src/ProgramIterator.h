@@ -2,11 +2,12 @@
 
 #include <assert.h>
 #include <locale>
+#include <mutex>
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
 #define SINGLE_BRACKET_HIERARCHY
-//#define MAX_BRACKET_DEPTH 2
+#define MAX_BRACKET_DEPTH 2
 #define MAX_JUMPS 20000
 #define SHORT_CIRCUIT_LINEAR_SINGULAR
 #define INITIAL_ZERO
@@ -47,12 +48,10 @@ private:
 	uint_fast32_t threadOffset, threadDelta;
 	uint_fast32_t programSize;
 
-	uint_fast64_t currentCount;
-
-	LinearIterator<cache_data_size, cache_size, max_program_size> iterators[max_program_size];
 	uint_fast32_t iteratorCount;
-	
 	int_fast32_t iteratorSizes[max_program_size];
+	LinearIterator<cache_data_size, cache_size, max_program_size> iterators[max_program_size];
+	
 	int_fast32_t remainingSize;
 	
 	enum class Bracket
@@ -63,14 +62,17 @@ private:
 	};
 	struct { Bracket bracket; uint_fast32_t depth; } brackets[max_program_size];
 	struct { uint_fast32_t zero; uint_fast32_t nonzero; } jumps[max_program_size];
-	uint_fast32_t leftBracketStack[max_program_size];
 	int_fast32_t bracketIdx;
 	
 	int_fast32_t iteratorIdx;
 
 	int_fast32_t firstIteratorWithNonZeroDataDelta;
 
+	std::mutex serializeLock;
+
 public:
+	uint_fast64_t currentCount;
+
 	uint_fast64_t TotalCount(uint_fast32_t programSize)
 	{
 		uint_fast64_t result = 0;
@@ -96,15 +98,11 @@ public:
 		}
 	}
 
-	inline uint_fast64_t CurrentCount()
-	{
-		return currentCount;
-	}
-
 	void Start(uint_fast32_t programSize, uint_fast32_t threadOffset, uint_fast32_t threadDelta)
 	{
 		this->programSize = programSize;
 		this->currentCount = 0;
+		
 		this->threadOffset = threadOffset;
 		this->threadDelta = threadDelta;
 
@@ -114,27 +112,110 @@ public:
 		iteratorSizes[0] = programSize;
 		firstIteratorWithNonZeroDataDelta = 0;
 		lastExecutionMaxProgramIdx = 0;
-		bool found = NextValidIteratorSizes(threadOffset);
-		assert(found);
+		bracketIdx = 0;
 
 		bracketIdx = 0;
 		brackets[0].bracket = Bracket::EMPTY;
 		brackets[0].depth = 0;
 		jumps[0].zero = jumps[0].nonzero = 1;
 		
+		if (!NextValidIteratorSizes(threadOffset))
+		{
+			return;
+		}
+		bracketIdx = 0;
 		while (!NextBrackets())
 		{
-			bool found = NextValidIteratorSizes(threadDelta);
-			assert(found);
+			if (!NextValidIteratorSizes(threadDelta))
+			{
+				return;
+			}
 			bracketIdx = 0;
 		}
+		lastExecutionMaxProgramIdx = iteratorCount - 1;
 
 		iteratorIdx = 0;
 		iterators[0].Start(iteratorSizes[0]);
 	}
 
+	void Serialize(std::ostream& output)
+	{
+		serializeLock.lock();
+
+		output << programSize << " " << threadOffset << " " << threadDelta << "\n";
+		output << currentCount << "\n";
+		output << iteratorCount << "\n";
+		for (uint_fast32_t i = 0; i < iteratorCount; i++)
+		{
+			output << iteratorSizes[i] << " ";
+		}
+		output << "\n";
+		for (uint_fast32_t i = 0; i < iteratorCount; i++)
+		{
+			output << " ";
+			iterators[i].Serialize(output);
+			output << "\n";
+		}
+		output << "\n";
+		for (uint_fast32_t i = 0; i < iteratorCount - 1; i++)
+		{
+			output << " " << (brackets[i].bracket == Bracket::EMPTY ? 0 : brackets[i].bracket == Bracket::LEFT ? 1 : 2) << " " << brackets[i].depth << "\n";
+		}
+		output << "\n";
+		for (uint_fast32_t i = 0; i < iteratorCount - 1; i++)
+		{
+			output << " " << jumps[i].zero << " " << jumps[i].nonzero << "\n";
+		}
+		output << "\n";
+		output << iteratorIdx << "\n";
+		output << firstIteratorWithNonZeroDataDelta << " " << lastExecutionSuccessful << " " << lastExecutionMaxProgramIdx << "\n";
+
+		serializeLock.unlock();
+	}
+
+	bool Deserialize(std::istream& input)
+	{
+		serializeLock.lock();
+
+		input >> programSize >> threadOffset >> threadDelta;
+		input >> currentCount;
+		input >> iteratorCount;
+		for (uint_fast32_t i = 0; i < iteratorCount; i++)
+		{
+			input >> iteratorSizes[i];
+		}
+		for (uint_fast32_t i = 0; i < iteratorCount; i++)
+		{
+			if (!iterators[i].Deserialize(input))
+			{
+				serializeLock.unlock();
+				return false;
+			}
+		}
+		for (uint_fast32_t i = 0; i < iteratorCount - 1; i++)
+		{
+			int bracketInt;
+			input >> bracketInt >> brackets[i].depth;
+			brackets[i].bracket = bracketInt == 0 ? Bracket::EMPTY : bracketInt == 1 ? Bracket::LEFT : Bracket::RIGHT;
+		}
+		for (uint_fast32_t i = 0; i < iteratorCount - 1; i++)
+		{
+			input >> jumps[i].zero >> jumps[i].nonzero;
+		}
+		input >> iteratorIdx;
+		input >> firstIteratorWithNonZeroDataDelta >> lastExecutionSuccessful >> lastExecutionMaxProgramIdx;
+
+		// Clear data
+		remainingSize = 0;
+		bracketIdx = 0;
+
+		serializeLock.unlock();
+		return true;
+	}
+
 	bool Next()
 	{
+		serializeLock.lock();
 		while (!NextIterators())
 		{
 			int_fast64_t iteratorsCount = 1;
@@ -148,6 +229,7 @@ public:
 			{
 				if (!NextValidIteratorSizes(threadDelta))
 				{
+					serializeLock.unlock();
 					return false;
 				}
 				bracketIdx = 0;
@@ -156,6 +238,7 @@ public:
 			iterators[0].Start(iteratorSizes[0]);
 			lastExecutionMaxProgramIdx = iteratorCount - 1;
 		}
+		serializeLock.unlock();
 		return true;
 	}
 
@@ -183,6 +266,7 @@ private:
 #ifdef INITIAL_ZERO
 				iteratorSizes[0] = 1;
 				remainingSize--;
+				if (remainingSize < 0) return false;
 #endif
 				assert(iteratorCount - 2 >= 0 && iteratorCount - 2 < max_program_size);
 				// Set to -1 so that after the first call to NextIteratorSizes it will be 0
@@ -272,12 +356,10 @@ private:
 
 	bool NextBrackets()
 	{
-		if (iteratorCount == 1) return false;
-
 		while (bracketIdx >= 0)
 		{
 			uint_fast32_t remainingBrackets = iteratorCount - bracketIdx - 1;
-			bool left_valid = bracketIdx == 0 ? true : remainingBrackets >= brackets[bracketIdx - 1].depth + 2;
+			bool left_valid = bracketIdx == 0 ? remainingBrackets >= 2 : remainingBrackets >= brackets[bracketIdx - 1].depth + 2;
 			bool right_valid = bracketIdx == 0 ? false : brackets[bracketIdx - 1].depth > 0;
 
 			// EMPTY -> LEFT -> RIGHT -> EMPTY
@@ -292,7 +374,11 @@ private:
 				else if (right_valid)
 				{
 					if (!SetBracketRight()) continue;
-					if (bracketIdx == iteratorCount - 2) goto success;
+					if (bracketIdx == iteratorCount - 2)
+					{
+						SetJumps();
+						return true;
+					}
 					bracketIdx++;
 				}
 				else
@@ -305,7 +391,11 @@ private:
 				if (right_valid)
 				{
 					if (!SetBracketRight()) continue;
-					if (bracketIdx == iteratorCount - 2) goto success;
+					if (bracketIdx == iteratorCount - 2)
+					{
+						SetJumps();
+						return true;
+					}
 					bracketIdx++;
 				}
 				else
@@ -321,11 +411,6 @@ private:
 			}
 		}
 		return false;
-	
-	success:;
-
-		SetJumps();
-		return true;
 	}
 
 	inline bool SetBracketLeft()
@@ -358,6 +443,8 @@ private:
 
 	void SetJumps()
 	{
+		uint_fast32_t leftBracketStack[max_program_size];
+
 		for (uint_fast32_t i = 0; i < iteratorCount - 1; i++)
 		{
 			if (brackets[i].bracket == Bracket::LEFT)
@@ -842,7 +929,10 @@ public:
 			char* iterProg = iterators[i].GetProgram();
 			strcpy(output, iterProg); 
 			output += strlen(output);
-			if (i < iteratorCount - 1) output[0] = brackets[i].bracket == Bracket::LEFT ? '[' : ']';
+			if (i < iteratorCount - 1)
+			{
+				output[0] = brackets[i].bracket == Bracket::LEFT ? '[' : brackets[i].bracket == Bracket::RIGHT ? ']' : '_';
+			}
 			output++;
 			assert(output <= currentProgram + sizeof(currentProgram));
 		}
