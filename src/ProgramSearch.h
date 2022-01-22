@@ -9,8 +9,8 @@
 #include "ModDivisionTable.h"
 
 #define THREAD_COUNT 16
-#define SIZE_START 27
-#define SHOW_ALL_PROGRAMS_LENGTH 85
+#define SIZE_START 23
+#define SHOW_ALL_PROGRAMS_LENGTH 82
 
 template<typename PIteratorT, typename CacheT>
 class ProgramSearch
@@ -245,7 +245,7 @@ private:
 	void FindStringThread(uint_fast32_t threadIdx)
 	{
 		static const uint_fast32_t countUpdate = 1000000;
-		static const uint_fast32_t countSave = 1000000;
+		static const uint_fast32_t countSave = 10000000;
 
 		auto& iterator = iterators[threadIdx];
 
@@ -259,20 +259,13 @@ private:
 				lock.lock();
 				this->count += countUpdate;
 
-				uint_fast64_t currentCount = 0;
-				for (int i = 0; i < THREAD_COUNT; i++)
-				{
-					currentCount += iterators[i].currentCount;
-				}
-
 				if (printProgress)
 				{
-					// std::ofstream file("progress.txt", std::ofstream::app);
-					// file 
-					// 	<< std::right << std::setw(15) << this->count
-					// 	<< " " << programSize 
-					// 	<< " " << iterator.GetProgram() << std::endl;
-					// file.close();
+					uint_fast64_t currentCount = 0;
+					for (int i = 0; i < THREAD_COUNT; i++)
+					{
+						currentCount += iterators[i].currentCount;
+					}
 
 					double proportion = static_cast<double>(currentCount) / static_cast<double>(programSizeCount);
 					auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - sizeStart).count();
@@ -310,11 +303,11 @@ private:
 				continue;
 			}
 
-			lock.lock();
-
 			std::string postProgram = iterator.StringDistanceOutput(outputs[0], output_sizes[0], SHOW_ALL_PROGRAMS_LENGTH - programSize);
 			programResult = std::string(iterator.GetProgram()) + postProgram;
-			
+
+			lock.lock();
+
 			std::cout 
 				<< std::right << std::setw(3) << std::setfill(' ') << stringDist + programSize
 				<< " " << programResult << std::endl;
@@ -325,7 +318,35 @@ private:
 				<< " " << programResult << std::endl;
 			file.close();
 			
+			if (printProgress)
+			{
+				uint_fast64_t currentCount = 0;
+				for (int i = 0; i < THREAD_COUNT; i++)
+				{
+					currentCount += iterators[i].currentCount;
+				}
+
+				double proportion = static_cast<double>(currentCount) / static_cast<double>(programSizeCount);
+				auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now() - sizeStart).count();
+				uint_fast64_t remaining = static_cast<double>(elapsed) * (1-proportion) / proportion;
+
+				auto seconds = remaining % 60;
+				auto minutes = remaining / 60 % 60;
+				auto hours = remaining / 3600 % 24;
+				auto days = remaining / 86400;
+				
+				std::cout 
+					<< std::right
+					<< " " << programSize
+					<< " " << std::setw(10) << std::setprecision(6) << std::fixed << proportion * 100 << "%"
+					<< " " << iterator.GetProgram()
+					<< " Estimated remaining " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
+					<< "\r" << std::flush;
+			}
+
 			lock.unlock();
+
+			SaveFindStringProgress();
 		}
 	}
 

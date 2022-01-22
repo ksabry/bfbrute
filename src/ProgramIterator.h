@@ -8,7 +8,7 @@
 
 #define SINGLE_BRACKET_HIERARCHY
 #define MAX_BRACKET_DEPTH 2
-#define MAX_JUMPS 20000
+#define MAX_JUMPS 50000
 #define SHORT_CIRCUIT_LINEAR_SINGULAR
 #define INITIAL_ZERO
 // #define INITIAL_DATA_SYMMETRIC
@@ -167,7 +167,7 @@ public:
 			output << " " << jumps[i].zero << " " << jumps[i].nonzero << "\n";
 		}
 		output << "\n";
-		output << iteratorIdx << "\n";
+		output << iteratorIdx << " " << bracketIdx << " " << remainingSize << "\n";
 		output << firstIteratorWithNonZeroDataDelta << " " << lastExecutionSuccessful << " " << lastExecutionMaxProgramIdx << "\n";
 
 		serializeLock.unlock();
@@ -202,12 +202,8 @@ public:
 		{
 			input >> jumps[i].zero >> jumps[i].nonzero;
 		}
-		input >> iteratorIdx;
+		input >> iteratorIdx >> bracketIdx >> remainingSize;
 		input >> firstIteratorWithNonZeroDataDelta >> lastExecutionSuccessful >> lastExecutionMaxProgramIdx;
-
-		// Clear data
-		remainingSize = 0;
-		bracketIdx = 0;
 
 		serializeLock.unlock();
 		return true;
@@ -337,13 +333,19 @@ private:
 			}
 #endif
 
-			// Do not permit [-] (since [+] is equivalent)
+			// Remove patterns equivalent to [+]
+			// Note that while [+*] and [-*] are not necessarily equivalent in behavior to [+], the cases in which they are not equivalent are always infinite loops and so can be safely pruned
 			if (
-				iteratorSizes[iteratorIdx] == 1
-				&& iteratorIdx > 0
+				iteratorIdx > 0
 				&& brackets[iteratorIdx - 1].bracket == Bracket::LEFT
 				&& brackets[iteratorIdx].bracket == Bracket::RIGHT
-				&& iterators[iteratorIdx].Data().data[cache_data_size / 2] == 255
+				&&
+				(
+					// Do not permit [-*] with any amount of minuses
+					iterators[iteratorIdx].Data().data[cache_data_size / 2] == 256 - iteratorSizes[iteratorIdx]
+					// Do not permit [+*] with more than 1 plus
+					|| iteratorSizes[iteratorIdx] > 1 && iterators[iteratorIdx].Data().data[cache_data_size / 2] == iteratorSizes[iteratorIdx]
+				)
 			)
 			{
 				continue;
