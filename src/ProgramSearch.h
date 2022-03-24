@@ -282,7 +282,7 @@ private:
 						<< " " << std::setw(10) << std::setprecision(6) << std::fixed << proportion * 100 << "%"
 						<< " " << iterator.GetProgram()
 						<< " Estimated remaining " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
-						<< "\r" << std::flush;
+						<< "          \r" << std::flush;
 				}
 				lock.unlock();
 			}
@@ -341,7 +341,7 @@ private:
 					<< " " << std::setw(10) << std::setprecision(6) << std::fixed << proportion * 100 << "%"
 					<< " " << iterator.GetProgram()
 					<< " Estimated remaining " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
-					<< "\r" << std::flush;
+					<< "          \r" << std::flush;
 			}
 
 			lock.unlock();

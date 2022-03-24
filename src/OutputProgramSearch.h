@@ -196,7 +196,7 @@ public:
 						<< " " << iterator.GetProgram()
 						<< " Rem " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
 						<< " - Eta " << eta
-						<< '\r' << std::flush
+						<< '          \r' << std::flush
 					;
 				}
 
@@ -342,7 +342,7 @@ public:
 						<< std::setw(3) << findMultipleIterators[0].programSize << " "
 						<< std::setw(12) << findMultipleCounts[0] << " "
 						<< std::string(program) << "      "
-						<< '\r' << std::flush
+						<< '          \r' << std::flush
 					;
 
 					// if (iterator_idx > 0)
@@ -511,7 +511,7 @@ public:
 					// }
 
 					std::cout
-						<< '\r' << std::flush
+						<< '          \r' << std::flush
 					;
 
 					lock.unlock();

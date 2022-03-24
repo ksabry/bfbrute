@@ -175,7 +175,7 @@ private:
 						<< " " << iterator.GetProgram()
 						<< " Rem " << std::setw(3) << days << ":" << std::setfill('0') << std::setw(2) << hours << ":" << std::setw(2) << minutes << ":" << std::setw(2) << seconds << std::setfill(' ')
 						<< " - Eta " << eta
-						<< '\r' << std::flush
+						<< '          \r' << std::flush
 					;
 				}
 
