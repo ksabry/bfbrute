@@ -37,7 +37,9 @@ ifeq (,$(wildcard $(OUT_DIR)))
 $(shell mkdir -p $(OUT_DIR))
 endif
 
-$(DEP_DIR)/%.d: $(SRC_DIR)/%.cpp 
+# always rebuild for templated headers
+
+$(DEP_DIR)/%.d: $(SRC_DIR)/%.cpp .FORCE
 ifeq (,$(wildcard $(dir $@)))
 	mkdir -p $(dir $@) 
 endif
@@ -49,5 +51,9 @@ ifeq (,$(wildcard $(dir $@)))
 endif
 	$(CXX) $(CXXFLAGS) -c -o $@ $<
 
-$(OUT_FILE): $(OBJ_FILES)
-	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $^
+$(OUT_FILE): $(OBJ_FILES) .FORCE
+	$(CXX) $(CXXFLAGS) $(LDFLAGS) -o $@ $(OBJ_FILES)
+
+.FORCE:
+
+.PHONY: .FORCE

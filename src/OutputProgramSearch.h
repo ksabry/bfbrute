@@ -7,7 +7,7 @@
 #include "LinearIterator.h"
 #include "ModDivisionTable.h"
 
-#define SIZE_START 1
+#define SIZE_START 15
 #define THREAD_COUNT 16
 
 #define MULTIPLE_MAX_TOTAL_LENGTH 70
@@ -113,8 +113,8 @@ private:
 	PIteratorT iterators[THREAD_COUNT];
 
 	std::thread* threads[THREAD_COUNT];
-	uint_fast32_t bestFoundOutputLength = 1;
-	uint_fast32_t bestFoundProgramSize = 10;
+	uint_fast32_t bestFoundOutputLength = 0;
+	uint_fast32_t bestFoundProgramSize = 0;
 
 	uint_fast32_t programSize;
 	uint_fast64_t programSizeCount;

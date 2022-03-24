@@ -335,3 +335,5 @@ obj/**
 output.txt
 
 .vscode
+
+progress/**

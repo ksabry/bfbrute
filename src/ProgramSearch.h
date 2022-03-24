@@ -9,8 +9,8 @@
 #include "ModDivisionTable.h"
 
 #define THREAD_COUNT 16
-#define SIZE_START 23
-#define SHOW_ALL_PROGRAMS_LENGTH 82
+#define SIZE_START 16
+#define SHOW_ALL_PROGRAMS_LENGTH 85
 
 template<typename PIteratorT, typename CacheT>
 class ProgramSearch
@@ -244,8 +244,8 @@ public:
 private:
 	void FindStringThread(uint_fast32_t threadIdx)
 	{
-		static const uint_fast32_t countUpdate = 1000000;
-		static const uint_fast32_t countSave = 10000000;
+		static const uint_fast32_t countUpdate = 100000;
+		static const uint_fast32_t countSave = 1000000;
 
 		auto& iterator = iterators[threadIdx];
 
